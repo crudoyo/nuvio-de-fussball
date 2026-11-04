@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.4 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.5 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -154,3 +154,33 @@ Referenz für die DOM-Struktur: [DaddyLiveProvider.js im Open-Source-Projekt Nuv
 - Das JSON enthält den zugeordneten Veranstaltungstitel, Anstoßzeit, Sendernamen und -IDs sowie den Grund, falls die Paarung nicht erkannt wurde. Zugangstoken oder abspielbare Mediendateien sind darin nicht enthalten.
 - Alte einzelne Ausreißer im ansonsten aktuellen DaddyLive-Spielplan (beispielsweise April 2026) werden verworfen, wenn sie älter als sieben Tage sind. Vollständig veraltete Spielpläne werden wie bisher abgelehnt und die nächstmögliche Datenquelle versucht.
 - Ist die Veranstaltung über die direkte Diagnose auffindbar, aber nicht im Nuvio-Katalog, wird als Nächstes die OpenLigaDB-Katalog-ID beziehungsweise die Zuordnung der Mannschaftsnamen geprüft. Sind Sender sichtbar, ist damit **noch keine** erfolgreiche Videowiedergabe bestätigt.
+
+## Native HLS-/DASH-Stream-Unterstützung (v0.4.5)
+
+Die Android-APK `Sport TV Native` verarbeitet bei DaddyLive nicht bloß eine Medienadresse, sondern auch die Player-Auflösung, kurzlebige Playlist-Tokens und besondere komprimierte Mediensegmente in einem eigenen Media3-/ExoPlayer-Datenquellenadapter. Ein normales Nuvio-/Stremio-Add-on kann diesen Java-Adapter **nicht** auf dem Gerät ausführen. Die HTML-Player werden daher weiterhin ausdrücklich als `externalUrl` markiert, nicht als angebliche HLS-Streams.
+
+**Was neu funktioniert:** Ein Kanal kann mit einer **eigenen, öffentlich abrufbaren, zur Wiedergabe freigegebenen** direkten `.m3u8`- oder `.mpd`-URL verknüpft werden. Der Stream erhält `url`, `behaviorHints.notWebReady: true` und bei Bedarf `behaviorHints.proxyHeaders.request` mit sicheren `Referer`-, `Origin`- und `User-Agent`-Feldern. Bereits über die optional eingebundenen Sport-Add-ons gelieferte direkte HLS-/DASH-URLs erhalten ebenfalls den WebReady-Hinweis, ohne ihre vorhandenen Header zu überschreiben.
+
+Die Zuordnung erfolgt über die vom aktuellen DaddyLive-Spielplan erkannten numerischen Kanal-IDs. Setze in **Cloudflare Workers → Settings → Variables and Secrets** die optionale Text-/Secret-Variable `NATIVE_CHANNEL_STREAMS_JSON` auf eine JSON-Map wie:
+
+```json
+{
+  "123": {
+    "name": "Mein freier HLS-Livestream",
+    "url": "https://cdn.example.org/live/playlist.m3u8",
+    "headers": {
+      "Referer": "https://portal.example.org/",
+      "Origin": "https://portal.example.org",
+      "User-Agent": "MyAuthorizedPlayer/1.0"
+    }
+  }
+}
+```
+
+Dies ist nur ein **Formatbeispiel**, keine abspielbare URL. Ohne konfigurierte Quelle gibt es dadurch keine neuen nativen DaddyLive-Streams. Die Kanal-ID muss tatsächlich in einem zur konkreten Partie passenden DaddyLive-Spielplaneintrag vorkommen. Native Einträge erscheinen vor bisherigen `externalUrl`-Playern; sie werden nicht durch frei erfundene HLS-Adressen ersetzt.
+
+**Sicherheitsgrenze:** Der Worker ist öffentlich erreichbar. Hinterlege **keine** Abonnement-URLs, Session-Cookies, DRM-Lizenzen, privaten Tokens, Signaturparameter oder Anmeldedaten in der Map. Credential-Parameter und lokale HTTP-Ziele werden zurückgewiesen; nur HTTPS-Medienadressen mit den Endungen `.m3u8` oder `.mpd` werden akzeptiert. Die Mapper-Funktion sendet keine API-Schlüssel an externe Anbieter.
+
+**Warum keine automatische DaddyLive-HLS-Auflösung?** Der derzeitige öffentliche DaddyLive-Zugriff liefert ein Programm mit Kanal-IDs und HTML-Playerseiten. Die in der APK benötigte Tokenaktualisierung und spezielle Segmententpackung sind Nuvio nicht bekannt. Die Umsetzung einer zuverlässigen und berechtigten Wiedergabe erfordert eine passende direkte Medienquelle bzw. eine vom Anbieter ausdrücklich zugelassene Schnittstelle und einen echten Fire-TV-Test.
+
+Offizielle Formatdefinition: [Stremio Stream Object](https://stremio.github.io/stremio-addon-sdk/api/responses/stream.html). Nuvio TV implementiert die Stream-Header im Player und überträgt sie auch bei HLS/DASH-Segmentanforderungen.
