@@ -77,7 +77,9 @@ async function get(url,headers,fetcher,signal,segment=false,page=false){
       response.status>=300&&response.status<400?'redirect_not_supported':'upstream_http_error');
   }
   if(response.headers.has('set-cookie')){await response.body?.cancel().catch(()=>{});fail('session_required');}
-  const bytes=await read(response,segment?4096:256*1024,segment);
+  // Current player pages embed large channel lists. Match the Android page
+  // budget while keeping manifests and media-prefix probes much smaller.
+  const bytes=await read(response,page?4*1024*1024:segment?4096:256*1024,segment);
   return page?{bytes,url:current}:bytes;
   }
 }
@@ -106,16 +108,20 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
   if(!start)return {status:'invalid_channel',stream:null};
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
   const queue=[{url:start,referer:'https://thedaddy.pk/'}],seen=new Set();let status='no_public_media';
+  const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
   try{
     for(let count=0;queue.length&&count<6;count++){
       const page=queue.shift();if(seen.has(page.url))continue;seen.add(page.url);
+      checks.pages++;
       const response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,controller.signal,false,true);
       page.url=response.url;
+      seen.add(page.url);
       const origin=new URL(page.url).origin;
       const html=new TextDecoder('utf-8',{fatal:true}).decode(response.bytes);
-      if(SPECIAL.has(new URL(page.url).hostname))status='provider_transport_required';
+      if(SPECIAL.has(new URL(page.url).hostname)){status='provider_transport_required';checks.providerTransportPages++;}
       const media=literalMedia(html);
       if(media){
+        checks.mediaConfigurations++;
         if(SPECIAL.has(new URL(page.url).hostname))status='provider_transport_required';
         else if(new URL(media).pathname.toLowerCase().endsWith('.mpd'))status='dash_requires_configured_source';
         else{
@@ -123,26 +129,29 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
           await checkHls(media,headers,fetcher,controller.signal);
           const stream=nativeStreamRecord({url:media,headers,name:'DaddyLive · Kanal '+channelId});
           stream.description='Öffentliche HLS-Konfiguration automatisch aufgelöst; Manifest und erstes Segment geprüft. Gerätewiedergabe nicht bestätigt.';
-          return {status:'resolved',stream};
+          return {status:'resolved',stream,checks};
         }
       }
       // The provider identifies its content iframe explicitly. Ignore ad frames.
       for(const tag of html.matchAll(/<iframe\b[^>]*>/gi)){
         const a=attributes(tag[0]);if(!['thatframe','playerFrame'].includes(a.id))continue;
-        const url=player(a.src,page.url);if(url&&!seen.has(url))queue.unshift({url,referer:page.url});
+        const url=player(a.src,page.url);if(url&&!seen.has(url)){checks.contentFrames++;queue.unshift({url,referer:page.url});}
       }
       // Only offered same-channel alternatives; never manufacture media addresses.
       for(const tag of html.matchAll(/<(?:button|a)\b[^>]*\bdata-url\s*=[^>]*>/gi)){
         const a=attributes(tag[0]),url=player(a['data-url'],page.url);
-        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player)/stream-'+channelId+'\\.php$'))&&!seen.has(url))queue.push({url,referer:page.url});
+        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player)/stream-'+channelId+'\\.php$'))&&!seen.has(url)){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
       }
+      // Current Android catalogue uses this public channel-selection page.
+      // Read its offered buttons too; the legacy stream page may omit them.
+      if(page.url===start)queue.push({url:'https://thedaddy.pk/watch.php?id='+String(channelId).trim(),referer:page.url});
     }
-    return {status,stream:null};
+    return {status,stream:null,checks};
   }catch(error){
     const codes=new Set(['empty_response','response_too_large','access_denied','redirect_not_supported',
       'upstream_http_error','session_required','playlist_loop','unsupported_manifest','encrypted_playlist',
       'empty_playlist','session_media_address','unsupported_segment_container','playlist_depth_limit']);
-    return {status:controller.signal.aborted?'timeout':codes.has(error.message)?error.message:'not_reachable',stream:null};
+    return {status:controller.signal.aborted?'timeout':codes.has(error.message)?error.message:'not_reachable',stream:null,checks};
   }finally{clearTimeout(timer);}
 }
 export async function automaticDaddyStreams(game,events,matchScore,env,fetcher){

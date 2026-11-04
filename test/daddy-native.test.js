@@ -58,7 +58,7 @@ test('provider transport requirements never trigger a playlist-token request',as
     :new Response('const SRC="'+media+'";');};
   const result=await resolveDaddyChannel('426',fake);
   assert.equal(result.status,'provider_transport_required');assert.equal(result.stream,null);
-  assert.equal(seen.length,2);assert(seen.every(u=>!u.includes('playlist-token')));
+  assert.equal(seen.length,3);assert(seen.every(u=>!u.includes('playlist-token')));
 });
 test('refuses denied access, redirects and cookie sessions without forwarding credentials',async()=>{
   for(const [response,status] of [
@@ -85,7 +85,14 @@ test('does not advertise HTML, packed segments, encrypted playlists or DASH as a
 });
 test('rejects excessive page bodies and invalid channel IDs',async()=>{
   assert.equal((await resolveDaddyChannel('0',()=>{throw new Error('must not fetch');})).status,'invalid_channel');
-  assert.equal((await resolveDaddyChannel('426',async()=>new Response('x'.repeat(262145)))).status,'response_too_large');
+  assert.equal((await resolveDaddyChannel('426',async()=>new Response('x'.repeat(4*1024*1024+1)))).status,'response_too_large');
+});
+test('handles large current player pages without increasing manifest limits',async()=>{
+  const root='https://thedaddy.pk/stream/stream-426.php';
+  const result=await resolveDaddyChannel('426',network({[root]:()=>new Response(' '.repeat(300000)+'const SRC="'+media+'";')}));
+  assert.equal(result.status,'resolved');
+  const largeManifest=await resolveDaddyChannel('426',network({[media]:()=>new Response(' '.repeat(262145))}));
+  assert.equal(largeManifest.status,'response_too_large');
 });
 test('native availability diagnostic omits source URLs and never claims device playback',async()=>{
   const r=await handle(new Request('https://addon.example.org/debug/daddy-native/426.json'),{},network());

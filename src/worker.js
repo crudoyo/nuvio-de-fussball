@@ -13,7 +13,7 @@ import {
 import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.6';
+export const VERSION = '0.4.7';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -288,7 +288,7 @@ export async function handle(request,env={},fetcher=fetch) {
       const result=await resolveDaddyChannel(nativeCheck[1],fetcher);
       return json({version:VERSION,channelId:nativeCheck[1],status:result.status,
         nativeAvailable:Boolean(result.stream),checked:'entry_manifest_and_first_segment',
-        devicePlaybackVerified:false},200,0);
+        devicePlaybackVerified:false,checks:result.checks},200,0);
     }
     if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
     if(pathname==='/debug/daddy-lookup.json'){

@@ -24,4 +24,4 @@ console.log(JSON.stringify({version:health.version,nativePlayback:health.nativeP
 // This is a transport diagnostic, not an assertion of actual device playback.
 const diagnostic=await json('/debug/daddy-native/426.json');
 console.log(JSON.stringify({channelId:diagnostic.channelId,status:diagnostic.status,
-  nativeAvailable:diagnostic.nativeAvailable,devicePlaybackVerified:diagnostic.devicePlaybackVerified}));
+  nativeAvailable:diagnostic.nativeAvailable,devicePlaybackVerified:diagnostic.devicePlaybackVerified,checks:diagnostic.checks}));

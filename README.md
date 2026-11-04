@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.6 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.7 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -195,3 +195,5 @@ Android-Wiedergabekette und NuvioTV-Schnittstelle. Optional aktiviert
 `NATIVE_VERIFY_MANIFESTS="true"` eine begrenzte Inhaltsprüfung selbst
 konfigurierter öffentlicher HLS-/DASH-Einstiegsmanifeste. Dies ist kein
 automatischer DaddyLive-Resolver und kein Nachweis erfolgreicher Wiedergabe.
+
+Version 0.4.7 hebt ausschließlich das begrenzte Playerseiten-Limit auf 4 MiB an (wie im Android-HTTP-Transport); Manifestlimit 256 KiB und Segmentprobe 4 KiB bleiben bestehen. Die Liveprobe von 0.4.6 hatte eine größere aktuelle Playerseite abgewiesen. Die Kanaldiagnose enthält nun zusätzlich Zähler, jedoch keine Medienadressen oder Zugangsdaten.
