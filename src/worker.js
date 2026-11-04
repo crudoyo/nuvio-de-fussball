@@ -3,7 +3,7 @@
  * Data: OpenLigaDB (ODbL). Streams: optional user-configured Stremio sports addons.
  * No direct scraping, DRM circumvention, torrent/P2P support or stream fabrication.
  */
-export const VERSION = '0.2.0';
+export const VERSION = '0.2.1';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 3;
 const core = [
@@ -74,7 +74,7 @@ async function loadJSON(url, ttl, fetcher=fetch) {
       const hit=await cache.match(req);
       if (hit) { const value=await hit.json(); memoryCache.set(key,{value,until:Date.now()+60_000}); return value; }
     }
-    const res=await fetcher(key,{headers,signal:AbortSignal.timeout(8500),redirect:'error'});
+    const res=await fetcher(key,{headers,signal:AbortSignal.timeout(8500),redirect:'manual'});
     if (!res.ok) throw new Error(`Datenquelle HTTP ${res.status}`);
     const value=await res.json();
     memoryCache.set(key,{value,until:Date.now()+ttl*1000});
