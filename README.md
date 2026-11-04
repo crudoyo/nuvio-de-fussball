@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.3.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.3.1 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -73,3 +73,9 @@ Bei jedem Push auf `main` prüft der Workflow [Worker checks](.github/workflows/
 - **Nuvio Live Sports:** die URL hängt vom konkreten Anbieter/Hosting und gegebenenfalls der Personalisierung ab. Persönliche `https://.../manifest.json` unter `/configure` angeben. **Keinen ungeprüften öffentlichen Hostnamen hart einkodieren.**
 - Streamquellen werden bei Bedarf (wenn ein Spiel geöffnet wird) abgefragt, nicht dauerhaft in diesem Repository gespeichert. Zugangsdaten werden nicht im Repository abgelegt. Direkte Verlinkungen ersetzen keine Nutzungsrechte; bei nicht unterstützten P2P-/geschützten Formaten wird nichts umgangen.
 - Logos und Namen der Mannschaften gehören den jeweiligen Rechteinhabern; die Grafiken sind keine offiziellen Wettbewerbsmedien.
+
+## Logo-Kompatibilität (v0.3.1)
+
+- OpenLigaDB liefert Vereinslogos teils als originale Wikimedia-SVG-Dateien. Da die Match-Karten ausschließlich sichere eingebettete Rasterbilder verwenden, wird ein Wikimedia-SVG-Link auf die offizielle 240-Pixel-PNG-Vorschau des Wikimedia-Servers umgesetzt.
+- Vorhandene große Wikimedia-SVG-Thumbnails werden auf 240 Pixel normalisiert; kurze Weiterleitungen auf demselben Host sind erlaubt. Andere Bildhosts und nicht unterstützte Formate bleiben beim Teamkürzel, statt eine fehlerhafte Grafik einzubetten.
+- Die Poster-URLs enthalten eine Versionsangabe, damit Nuvio nach einem Update neue Grafiken lädt. Eine Bildquelle ohne gültige oder erreichbare Grafik lässt sich dadurch allein nicht reparieren.
