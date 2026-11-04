@@ -6,6 +6,7 @@
   "vars": {
     "SEASON": "2026",
     "DADDY_WEB_PLAYERS": "true",
-    "NATIVE_VERIFY_MANIFESTS": "true"
+    "NATIVE_VERIFY_MANIFESTS": "true",
+    "DADDY_NATIVE_RESOLVE": "true"
   }
 }

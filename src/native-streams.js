@@ -23,17 +23,19 @@ function safeHost(host){
     &&!h.endsWith('.internal')&&!h.endsWith('.test')&&!h.endsWith('.invalid')
     &&!h.includes(':')&&!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(h);
 }
-export function publicMediaUrl(raw){
+export function publicResourceUrl(raw){
   try{
     if(typeof raw!=='string'||raw.length>2048)return null;
     const u=new URL(raw);
     if(u.protocol!=='https:'||u.username||u.password||u.port||!safeHost(u.hostname)||u.hash)
       return null;
-    if(![...MEDIA_TYPES.keys()].some(ext=>u.pathname.toLowerCase().endsWith(ext)))
-      return null;
     for(const key of u.searchParams.keys())if(SENSITIVE_QUERY.test(key))return null;
     return u.href;
   }catch{return null;}
+}
+export function publicMediaUrl(raw){
+  const url=publicResourceUrl(raw);
+  return url&&[...MEDIA_TYPES.keys()].some(ext=>new URL(url).pathname.toLowerCase().endsWith(ext))?url:null;
 }
 export function cleanMediaHeaders(headers){
   if(!headers||typeof headers!=='object'||Array.isArray(headers))return {};
