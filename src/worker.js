@@ -267,6 +267,25 @@ export async function handle(request,env={},fetcher=fetch) {
     const match=pathname.match(/^\/u\/([A-Za-z0-9_-]{1,3500})(\/.*)$/);
     if(match){pathname=match[2];prefix=`/u/${match[1]}`;sources=decodeConfig(match[1]);}
     if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
+    const daddyMatch=pathname.match(/^\/debug\/daddy-match\/([^/]+)\.json$/);
+    if(daddyMatch) {
+      const available=await leagues(env,fetcher),found=parseGame(daddyMatch[1],available);
+      if(!found)return json({error:'Spiel nicht gefunden'},404);
+      const fixturesInLeague=await fixtures(found.league,env,fetcher);
+      const game=fixturesInLeague.find(x=>String(x.matchID)===found.mid);
+      if(!game)return json({error:'Spiel nicht gefunden'},404);
+      const daddy=await getDaddySchedule(env,fetcher);
+      const candidates=matchDaddyEvents(game,daddy.events,matchScore);
+      return json({
+        version:VERSION, fixture:gameId(found.league,game),
+        daddy:daddyPublicDiagnostic(daddy),
+        matchedEvents:candidates.map(e=>({
+          name:e.name,startTime:e.startTime,
+          channels:e.channels.map(c=>({id:c.id,name:c.name}))
+        })),
+        externalPlayerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
+      },200,0);
+    }
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const list=await leagues(env,fetcher);
     if(pathname==='/manifest.json')return json(manifest(list),200,3600);
