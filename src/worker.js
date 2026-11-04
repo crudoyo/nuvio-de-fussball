@@ -5,14 +5,15 @@
  */
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
-export const VERSION = '0.3.1';
+import { espnTeamsUrl, attachFallbackCrests } from './crests.js';
+export const VERSION = '0.3.2';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 6;
-// Known public addon endpoints: use their catalog/stream protocol, not scraping.
-// PenguPlay requires a configured sports-capable manifest to expose football.
+// Public addons provide their own catalogs/stream endpoints.
+// PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
 const BUILTIN_MANIFESTS = [
-  'https://sports.highfly.dev/manifest.json',
-  'https://pengu.uk/manifest.json'
+  'https://sports.highfly.to/manifest.json',
+  'https://nuvio.moaqeel6679.my.id/manifest.json'
 ];
 function streamSources(personal = []) {
   return safeUrls([...personal, ...BUILTIN_MANIFESTS]);
@@ -108,10 +109,20 @@ async function leagues(env, fetcher) {
 }
 async function fixtures(league,env,fetcher) {
   const external=espnScoreboardUrl(league.shortcut);
-  if(external) return normalizeEspnEvents(await loadJSON(external,600,fetcher));
-  const season=Number(env.SEASON)||seasonOf();
-  const rows=await loadJSON(API + '/getmatchdata/' + encodeURIComponent(league.shortcut) + '/' + season,600,fetcher);
-  return Array.isArray(rows)?rows.filter(x=>Number.isInteger(x.matchID)&&x.team1?.teamName&&x.team2?.teamName):[];
+  let matches;
+  if(external) matches=normalizeEspnEvents(await loadJSON(external,600,fetcher));
+  else {
+    const season=Number(env.SEASON)||seasonOf();
+    const rows=await loadJSON(API + '/getmatchdata/' + encodeURIComponent(league.shortcut) + '/' + season,600,fetcher);
+    matches=Array.isArray(rows)?rows.filter(x=>Number.isInteger(x.matchID)&&x.team1?.teamName&&x.team2?.teamName):[];
+  }
+  // The second source only improves artwork; missing/blocked ESPN must
+  // never prevent the match catalog from being shown.
+  const crestUrl=espnTeamsUrl(league.shortcut);
+  if(!crestUrl || !matches.length) return matches;
+  try {
+    return attachFallbackCrests(matches, await loadJSON(crestUrl,14400,fetcher));
+  } catch { return matches; }
 }
 export function startTime(m) {
   const raw=m.matchDateTimeUTC;
@@ -195,9 +206,30 @@ export async function resolveStreams(game, sources, fetcher=fetch) {
   const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
   return [...new Map(found.map(s=>[s.url||s.externalUrl,s])).values()];
 }
+export async function diagnoseSources(personal=[], fetcher=fetch) {
+  const all=streamSources(personal);
+  return Promise.all(all.map(async (url,i)=>{
+    const id=url.includes('sports.highfly.to')?'Sports Streams':
+      url.includes('nuvio.moaqeel6679.my.id')?'Nuvio Live Sports':
+      url.includes('pengu.uk')?'PenguPlay':'Persönlicher Anbieter '+(i+1);
+    try {
+      const manifest=await loadJSON(url,300,fetcher);
+      const types=manifest.types||[];
+      const catalogs=manifest.catalogs||[];
+      const sports=catalogs.filter(c=>/sport|soccer|football|fußball|fussball|live|upcoming/i.test(String(c.type)+' '+String(c.id)+' '+String(c.name)));
+      return {name:id,reachable:true,declaredTypes:types,
+        catalogCount:catalogs.length,sportsCatalogs:sports.length,hasStreamResource:
+          (manifest.resources||[]).some(r=>r==='stream'||r?.name==='stream')};
+    } catch(e) {
+      const message=String(e?.message||'');
+      const status=message.match(/HTTP (\d{3})/);
+      return {name:id,reachable:false,reason:status?'HTTP '+status[1]:'Not reachable'};
+    }
+  }));
+}
 const CSS=`<style>body{margin:0;background:#0e1825;color:#f2f7fb;font:16px system-ui,sans-serif;line-height:1.6}main{max-width:760px;margin:42px auto;padding:0 20px}.panel{background:#16283a;border:1px solid #30465a;padding:20px;border-radius:14px;margin:20px 0}h1{font-size:28px}p,li{color:#c4d3dd}a{color:#9be2c9}textarea,input{box-sizing:border-box;width:100%;background:#081726;color:#fff;border:1px solid #52677b;border-radius:8px;padding:12px;font:inherit}button{background:#8ee0bc;color:#082019;padding:12px 17px;border:0;border-radius:8px;font-weight:bold;cursor:pointer}small{color:#9daebd}</style>`;
-const page=()=>`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio Fußball</title>${CSS}<main><h1>⚽ Deutscher Fußball für Nuvio</h1><p>Je Liga und Pokalwettbewerb ein Katalog, je Spiel eine Kachel. OpenLigaDB liefert die Spielpläne.</p><div class="panel"><h2>Streams aus vorhandenen Add-ons (optional)</h2><p>Sports Streams und die öffentliche PenguPlay-Schnittstelle werden automatisch geprüft. Füge zusätzlich die <strong>persönliche HTTPS-Manifest-URL</strong> von Nuvio Live Sports oder einem weiteren Sport-Add-on ein. Nicht die /configure-URL.</p><form action="/generate" method="get"><label for="sources">Manifest-URLs, eine pro Zeile:</label><textarea id="sources" name="sources" rows="5" placeholder="https://…/manifest.json"></textarea><p><button type="submit">Installations-URL erstellen</button></p></form><small>Ohne weitere Angaben prüfen wir die öffentlichen Schnittstellen. PenguPlay liefert nur dann Fußball, wenn seine Manifest-Konfiguration auch Sportkataloge anbietet. Keine direkte DaddyLive-Integration. Nicht jeder Event ist in den externen Add-ons auffindbar.</small></div><div class="panel"><p><a href="/manifest.json">Manifest ohne Streams</a> · <a href="/health">Status</a></p><p>Für Nuvio die generierte URL unter Add-ons hinzufügen, nicht unter JavaScript-Plugins.</p></div><p><small>Daten: <a href="https://openligadb.de/">OpenLigaDB</a> (ODbL 1.0). Keine Gewähr für die Abdeckung aller deutschen Ligen. Unabhängiges Community-Projekt.</small></p></main></html>`;
-function installPage(url,count) {return `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio installieren</title>${CSS}<main><h1>⚽ Nuvio-Installation</h1><div class="panel"><p>${count} Sport-Add-on(s) konfiguriert.</p><p>Diese URL unter <strong>Nuvio → Add-ons</strong> hinzufügen:</p><input id="u" readonly value="${escape(url)}"><p><button id="copy" onclick="navigator.clipboard.writeText(document.getElementById('u').value).then(()=>this.innerText='Kopiert!')">URL kopieren</button></p><a href="${escape(url)}">Manifest öffnen</a></div><small>Die Installations-URL kann persönliche Zugriffstoken deiner Sport-Add-ons enthalten. Nicht öffentlich teilen.</small><p><a href="/configure">Zurück</a></p></main></html>`;}
+const page=()=>`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio Fußball</title>${CSS}<main><h1>⚽ Deutscher Fußball für Nuvio</h1><p>Je Liga und Pokalwettbewerb ein Katalog, je Spiel eine Kachel. OpenLigaDB liefert die Spielpläne.</p><div class="panel"><h2>Streams aus vorhandenen Add-ons (optional)</h2><p>Die öffentlichen Schnittstellen von Sports Streams und Nuvio Live Sports werden probeweise geprüft. <strong>PenguPlay Live TV funktioniert nur mit deiner persönlichen konfigurierten Manifest-URL.</strong> Füge sie hier hinzu, auch wenn du die Pengu-Kataloge in Nuvio ausgeblendet hast. Nicht die /configure-URL.</p><form action="/generate" method="get"><label for="sources">Manifest-URLs, eine pro Zeile:</label><textarea id="sources" name="sources" rows="5" placeholder="https://…/manifest.json"></textarea><p><button type="submit">Installations-URL erstellen</button></p></form><small>Ohne persönliche URL kann der Worker nicht auf deine PenguPlay-Live-TV-Konfiguration zugreifen. Streams erscheinen nur, wenn ein Anbieter eine Begegnung zuordnen und einen Direktstream liefern kann. Vor dem Spielbeginn sind Streams oft noch nicht verfügbar. Keine direkte DaddyLive-Integration. Nicht jeder Event ist in den externen Add-ons auffindbar.</small></div><div class="panel"><p><a href="/manifest.json">Manifest ohne Streams</a> · <a href="/health">Status</a> · <a href="/debug/sources.json">Quellen-Diagnose</a></p><p>Für Nuvio die generierte URL unter Add-ons hinzufügen, nicht unter JavaScript-Plugins.</p></div><p><small>Daten: <a href="https://openligadb.de/">OpenLigaDB</a> (ODbL 1.0). Keine Gewähr für die Abdeckung aller deutschen Ligen. Unabhängiges Community-Projekt.</small></p></main></html>`;
+function installPage(url,count) {return `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio installieren</title>${CSS}<main><h1>⚽ Nuvio-Installation</h1><div class="panel"><p>${count} Sport-Add-on(s) konfiguriert.</p><p>Diese URL unter <strong>Nuvio → Add-ons</strong> hinzufügen:</p><input id="u" readonly value="${escape(url)}"><p><button id="copy" onclick="navigator.clipboard.writeText(document.getElementById('u').value).then(()=>this.innerText='Kopiert!')">URL kopieren</button></p><a href="${escape(url)}">Manifest öffnen</a> · <a href="${escape(url.replace(/manifest\.json$/,'debug/sources.json'))}">Quellen prüfen</a></div><small>Die Installations-URL kann persönliche Zugriffstoken deiner Sport-Add-ons enthalten. Nicht öffentlich teilen.</small><p><a href="/configure">Zurück</a></p></main></html>`;}
 export async function handle(request,env={},fetcher=fetch) {
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,OPTIONS'}});
   if(request.method!=='GET')return json({error:'Nur GET erlaubt'},405);
@@ -213,6 +245,7 @@ export async function handle(request,env={},fetcher=fetch) {
     let pathname=url.pathname,prefix='',sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(','));
     const match=pathname.match(/^\/u\/([A-Za-z0-9_-]{1,3500})(\/.*)$/);
     if(match){pathname=match[2];prefix=`/u/${match[1]}`;sources=decodeConfig(match[1]);}
+    if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher)},200,0);
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const list=await leagues(env,fetcher);
     if(pathname==='/manifest.json')return json(manifest(list),200,3600);
