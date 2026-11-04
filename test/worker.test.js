@@ -65,3 +65,25 @@ test('streams are bridged, excluding torrent/P2P entries',async()=>{
   const r=await get('/u/'+encodeConfig([upstream])+'/stream/tv/defootball_bl1_9876.json');
   assert.equal((await r.json()).streams.length,1);
 });
+
+test('Cloudflare Worker requests use a supported redirect mode', async () => {
+  const seen = [];
+  const cloudflareFetch = async (url, options) => {
+    if (!['manual', 'follow'].includes(options?.redirect)) {
+      throw new TypeError('Cloudflare Workers supports only manual or follow redirects');
+    }
+    seen.push({url: String(url), redirect: options.redirect});
+    if (String(url) === 'https://api.openligadb.de/getavailableleagues/2037') return response([]);
+    if (String(url) === 'https://api.openligadb.de/getmatchdata/bl1/2037') return response([fixture]);
+    return response([]);
+  };
+  const res = await handle(
+    new Request('https://test.workers.dev/catalog/tv/defootball_bl1.json'),
+    {SEASON: '2037'},
+    cloudflareFetch
+  );
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).metas.length, 1);
+  assert(seen.length >= 2);
+  assert(seen.every(({redirect}) => redirect === 'manual'));
+});
