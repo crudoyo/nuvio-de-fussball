@@ -109,4 +109,12 @@ test('Worker exposes documented HTML player only after explicit setting, not a f
   const diagnostics=await status.json();
   assert(diagnostics.providers.some(x=>x.name==='DaddyLive (direkter Spielplan)'&&
     x.footballEvents===2&&x.playerLinksEnabled));
+  const matchInfo=await handle(new Request(
+    'https://example.workers.dev/debug/daddy-match/defootball_bl1_43210.json'),
+    {SEASON:'2026',DADDY_WEB_PLAYERS:'true'},fetcher);
+  assert.equal(matchInfo.status,200);
+  const matchData=await matchInfo.json();
+  assert.equal(matchData.matchedEvents.length,1);
+  assert.deepEqual(matchData.matchedEvents[0].channels.map(x=>x.id),['302','401']);
+  assert.equal(matchData.daddy.footballEvents,2);
 });
