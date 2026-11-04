@@ -118,3 +118,51 @@ test('Worker exposes documented HTML player only after explicit setting, not a f
   assert.deepEqual(matchData.matchedEvents[0].channels.map(x=>x.id),['302','401']);
   assert.equal(matchData.daddy.footballEvents,2);
 });
+
+test('public 301 redirect to the current JSON URL is followed safely',async()=>{
+  const calls=[];
+  const result=await getDaddySchedule({},async(url,opt)=>{
+    const u=String(url);calls.push({url:u,mode:opt.redirect});
+    if(u==='https://thedaddy.pk/schedule/schedule-generated.json' && calls.length===1)
+      return asJson({},404);
+    if(u==='https://dlstreams.st/schedule/schedule-generated.json')
+      return new Response(null,{status:301,headers:{
+        location:'https://thedaddy.pk/schedule/schedule-generated.json'}});
+    return asJson(schedule);
+  });
+  assert.equal(result.reachable,true);
+  assert.equal(result.footballEvents,2);
+  assert(calls.every(c=>c.mode==='manual'));
+  assert.equal(result.attempts[0].reason,'HTTP 404');
+});
+test('301 redirect to HTML homepage is reported, not treated as an empty schedule',async()=>{
+  const result=await getDaddySchedule({},async url=>{
+    const u=String(url);
+    if(u.includes('thedaddy.pk/schedule/'))return asJson({},404);
+    return new Response(null,{status:301,headers:{location:'https://thedaddy.pk/'}});
+  });
+  assert.equal(result.reachable,false);
+  assert.equal(result.attempts.length,2);
+  assert.equal(result.attempts[0].reason,'HTTP 404');
+  assert.equal(result.attempts[1].reason,'Public schedule redirected away from JSON');
+});
+test('protected API never follows redirects containing its key',async()=>{
+  const calls=[];
+  const key='SECRET-PRIVATE-NOT-IN_DIAGNOSTICS';
+  const result=await getDaddySchedule({DADDY_API_KEY:key},async(url,opt)=>{
+    const u=String(url);calls.push(u);
+    if(u.includes('daddyapi.php'))return new Response(null,{status:302,headers:{
+      location:'https://attacker.example/steal?key='+key}});
+    return asJson({},404);
+  });
+  assert.equal(result.reachable,false);
+  assert.equal(result.attempts[0].reason,'Protected API redirect blocked');
+  assert.equal(calls.length,3);
+  assert(!calls.some(u=>u.includes('attacker.example')));
+  assert(!JSON.stringify(result).includes(key));
+});
+test('public JSON error documents are not misclassified as successful schedules',async()=>{
+  const result=await getDaddySchedule({},async()=>asJson({error:'not found'}));
+  assert.equal(result.reachable,false);
+  assert(result.attempts.every(x=>x.reason==='Invalid schema'));
+});
