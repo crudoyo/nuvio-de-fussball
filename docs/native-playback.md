@@ -152,7 +152,7 @@ Keine Zugriffskontrolle, DRM-Prüfung oder Berechtigungsabfrage wurde umgangen.
 Eine automatische Freigabe aller DaddyLive-Quellen lässt sich aus den
 vorliegenden Repositories nicht ableiten.
 
-## Lokale Validierung
+## Validierung
 
 - `node --test`: 48 Tests bestanden, einschließlich vier neuer Preflight-Tests
   und erweiterter Integration mit abgelehntem sowie akzeptiertem Manifest.
@@ -161,7 +161,21 @@ vorliegenden Repositories nicht ableiten.
 - Worker-Dry-Run nicht erfolgreich ausführbar: npm ist nicht installiert;
   die Wrangler-Installation über den vorhandenen pnpm scheitert am Zugriff auf
   `https://registry.npmjs.org/wrangler` (`ERR_PNPM_META_FETCH_FAIL`). Es gibt
-  keinen lokal verfügbaren Wrangler. Ein erfolgreicher Worker-Build wird daher
+  keinen lokal verfügbaren Wrangler. Ein erfolgreicher lokaler Worker-Build wird daher
   ausdrücklich nicht behauptet. In einer Umgebung mit Registry-Zugang:
   `npm install`, `npm test`, `npm run build`. Die bestehende GitHub-CI prüft
   bereits Tests und `wrangler deploy --dry-run --outdir dist`.
+
+Nach Übertragung auf den GitHub-Branch `codex/daddylive-native` wurden alle 48
+Tests und der Worker-Dry-Run mit Wrangler 4.157.0 in
+[GitHub Actions erfolgreich ausgeführt](https://github.com/crudoyo/nuvio-de-fussball/actions/runs/41832368248).
+Geprüfter Commit: `0e8967f2ce2278f4972362835b9158d5026a6f9c`.
+Die GitHub-Commits bauen auf der bestehenden Upstream-Historie auf; der lokale
+Snapshot-Commit wurde nicht in das Repository übertragen.
+
+Der separate Check `Workers Builds: nuvio-de-fussball` der Cloudflare-
+Hostingintegration meldet einen Fehler. Derselbe Check scheitert bereits am
+unveränderten `main`-Commit `77a6dfd75616ea577325236f8ad0a73604376beb`.
+Die über GitHub sichtbare Zusammenfassung enthält keine Fehlerursache; dafür
+werden die Build-Logs im Cloudflare-Dashboard benötigt. Der erfolgreiche
+Worker-Dry-Run ist deshalb kein Nachweis eines erfolgreichen Deployments.
