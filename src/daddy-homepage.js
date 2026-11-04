@@ -60,8 +60,10 @@ export function parseDaddyHomepage(html) {
     if(!dayLabel||!/20\d{2}/.test(dayLabel))continue;
     const categories={};
     for(const group of sectionsAtClass(day,'schedule__category').slice(0,80)){
-      const category=cleanText(fromClass(group,'card__meta')).slice(0,100);
-      if(!category||!/soccer|football|fussball|fußball|futbol/i.test(category))continue;
+      const rawCategory=fromClass(group,'card__meta');
+      const category=cleanText(rawCategory).slice(0,100);
+      if(!category || (!/soccer|football|fussball|fußball|futbol/i.test(category)
+        && !rawCategory.includes('⚽')))continue;
       const events=[];
       for(const event of sectionsAtClass(group,'schedule__event').slice(0,300)){
         const time=cleanText(fromClass(event,'schedule__time'));
