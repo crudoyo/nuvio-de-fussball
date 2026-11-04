@@ -76,9 +76,16 @@ test('already provided direct upstream streams gain Stremio-native HLS hint',()=
   assert.equal(nativeAddonStream({url:'https://provider.example/watch.php'}).behaviorHints,undefined);
 });
 test('the stream endpoint returns native HLS first and external HTML fallback',async()=>{
-  const day='Wednesday 4th November 2026 - Schedule Time UK GMT';
+  const when=new Date(Date.now()+3600000);
+  const months=['January','February','March','April','May','June','July','August',
+    'September','October','November','December'];
+  const day='Wednesday '+when.getUTCDate()+'th '+months[when.getUTCMonth()]
+    +' '+when.getUTCFullYear()+' - Schedule Time UK GMT';
+  const time=String(when.getUTCHours()).padStart(2,'0')+':'
+    +String(when.getUTCMinutes()).padStart(2,'0');
+  const game={...fixture,matchDateTimeUTC:when.toISOString()};
   const schedule={[day]:{Soccer:[{
-    time:'20:00',event:'UEFA Champions League : Borussia Dortmund vs Real Betis',
+    time,event:'UEFA Champions League : Borussia Dortmund vs Real Betis',
     channels:[{channel_id:'426',channel_name:'Example Sport DE'}]
   }]}};
   const config={NATIVE_CHANNEL_STREAMS_JSON:JSON.stringify({
@@ -90,7 +97,7 @@ test('the stream endpoint returns native HLS first and external HTML fallback',a
         {headers:{'content-type':'application/json'}});
     return new Response('not available',{status:404});
   };
-  const streams=await resolveStreams(fixture,[],fake,config);
+  const streams=await resolveStreams(game,[],fake,config);
   assert.equal(streams.length,2);
   assert.equal(streams[0].url,url);
   assert.equal(streams[0].behaviorHints.notWebReady,true);
