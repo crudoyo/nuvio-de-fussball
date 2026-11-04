@@ -55,5 +55,32 @@ test('providers diagnostic does not display personal URL or token and flags cata
   const uri='https://test.workers.dev/debug/sources.json';
   const r=await handle(new Request(uri),{},fetcher);
   assert.equal(r.status,200);
-  assert.equal((await r.json()).providers.length,2);
+  assert.equal((await r.json()).providers.length,4);
+});
+
+test('Sports Streams mirrors remain available for matching when main instance blocks the Worker',async()=>{
+  const fixture={
+    matchID:828282,
+    matchDateTimeUTC:new Date(Date.now()+3600000).toISOString(),
+    team1:{teamName:'FC Bayern München'},team2:{teamName:'Borussia Dortmund'}
+  };
+  const seen=[];
+  const fetcher=async url=>{
+    const x=String(url);
+    seen.push(x);
+    if(x.includes('sports.highfly.to')||x.includes('sportsfree-us2.highfly.to'))
+      return new Response('forbidden',{status:403});
+    if(x==='https://sportsfree.highfly.to/manifest.json')
+      return j({name:'Sports Streams mirror',catalogs:[{id:'football',type:'sport',name:'Football'}]});
+    if(x==='https://sportsfree.highfly.to/catalog/sport/football.json')
+      return j({metas:[{id:'one',name:'Bayern Munich vs Borussia Dortmund'}]});
+    if(x==='https://sportsfree.highfly.to/stream/sport/one.json')
+      return j({streams:[{url:'https://media.example.com/bayern-dortmund.m3u8',name:'HLS'}]});
+    return new Response('unavailable',{status:503});
+  };
+  const {resolveStreams}=await import('../src/worker.js');
+  const streams=await resolveStreams(fixture,[],fetcher);
+  assert.equal(streams.length,1);
+  assert(streams[0].url.endsWith('/bayern-dortmund.m3u8'));
+  assert(seen.some(x=>x.includes('sportsfree.highfly.to/stream/sport/one.json')));
 });
