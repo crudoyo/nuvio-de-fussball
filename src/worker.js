@@ -13,7 +13,7 @@ import {
 import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.11';
+export const VERSION = '0.4.12';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -212,8 +212,11 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
         'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),30,fetcher);
       return (result.streams||[]).filter(s=>isDirect(s,!nativeOnly)).slice(0,12)
         .map(s=>{
-          const stream={...s,name:(String(addon.name||'Sport')+' · '+String(s.name||'Quelle')).slice(0,100)};
-          if(nativeOnly)delete stream.externalUrl;
+          const direct=playbackUrl(s.url);
+          const name=String(addon.name||'Sport')+' · '+String(s.name||'Quelle');
+          const stream={...s,name:(direct?name:'Browser · '+name).slice(0,100)};
+          if(direct)delete stream.externalUrl;
+          else delete stream.url;
           return nativeAddonStream(stream);
         });
     }));
@@ -281,7 +284,9 @@ export async function handle(request,env={},fetcher=fetch) {
     if(url.pathname==='/health')return json({ok:true,version:VERSION,season:Number(env.SEASON)||seasonOf(),
       nativePlayback:{automaticPublicHls:String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()==='true',
         verifyConfiguredManifests:String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true',
-        nativeOnly:String(env.NATIVE_ONLY||'').toLowerCase()==='true',providerTokenRenewal:false,packedSegments:false}},200,0);
+        nativeOnly:String(env.NATIVE_ONLY||'').toLowerCase()==='true',
+        browserFallbacks:String(env.NATIVE_ONLY||'').toLowerCase()!=='true'&&String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true',
+        providerTokenRenewal:false,packedSegments:false}},200,0);
     if(url.pathname==='/generate'){
       const sources=safeUrls((url.searchParams.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean).slice(0,12));
       const prefix=sources.length?`/u/${encodeConfig(sources)}`:'';

@@ -69,15 +69,22 @@ test('streams are bridged, excluding torrent/P2P entries',async()=>{
 test('native-only stream responses omit upstream browser links and keep direct media',async()=>{
   const direct='https://cdn.example/test.m3u8';
   const browser='https://sports.example/watch.php';
-  const fetcher=async url=>String(url)==='https://sports.example/stream/sport/evt1.json'
+  const isolated='https://fallback.example/manifest.json';
+  const fetcher=async url=>String(url)==='https://fallback.example/stream/sport/evt1.json'
     ?response({streams:[{externalUrl:browser},{url:direct,externalUrl:browser}]})
-    :fetchMock(url);
-  const route='/u/'+encodeConfig([upstream])+'/stream/tv/defootball_bl1_9876.json';
+    :fetchMock(String(url).replace('https://fallback.example/','https://sports.example/'));
+  const route='/u/'+encodeConfig([isolated])+'/stream/tv/defootball_bl1_9876.json';
   const result=await handle(new Request('https://test.workers.dev'+route),{SEASON:'2026',NATIVE_ONLY:'true'},fetcher);
   const {streams}=await result.json();
   assert.equal(result.status,200);
   assert.deepEqual(streams.map(stream=>stream.url),[direct]);
   assert.equal(streams[0].externalUrl,undefined);
+  const withFallback=await handle(new Request('https://test.workers.dev'+route),{SEASON:'2026',NATIVE_ONLY:'false'},fetcher);
+  const offered=(await withFallback.json()).streams;
+  assert.equal(offered[0].url,direct);
+  assert.equal(offered[0].externalUrl,undefined);
+  assert.equal(offered[1].externalUrl,browser);
+  assert.match(offered[1].name,/^Browser · /);
 });
 
 test('Cloudflare Worker requests use a supported redirect mode', async () => {

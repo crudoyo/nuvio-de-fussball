@@ -18,7 +18,8 @@ for(let i=0;i<36&&Date.now()<deadline;i++){
   await delay(3000);
 }
 if(!health)throw new Error('Deployed version/capabilities not confirmed within deployment window');
-if(health.nativePlayback.nativeOnly!==true)throw new Error('Production worker still allows external links');
+if(health.nativePlayback.nativeOnly!==false||health.nativePlayback.browserFallbacks!==true)
+  throw new Error('Production worker is missing the browser fallback');
 const manifest=await json('/manifest.json?release='+version);
 if(manifest.version!==version)throw new Error('Manifest and health versions differ');
 console.log(JSON.stringify({version:health.version,nativePlayback:health.nativePlayback,manifestVersion:manifest.version}));
