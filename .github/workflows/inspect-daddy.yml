@@ -1,0 +1,21 @@
+name: Inspect public player configuration
+on:
+  pull_request:
+    paths:
+      - scripts/inspect-daddy.mjs
+      - .github/workflows/inspect-daddy.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test diagnostic redaction
+        run: node --test test/inspect-daddy.test.js
+      - name: Read public configuration structure without executing page code
+        run: node scripts/inspect-daddy.mjs
