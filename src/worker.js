@@ -13,7 +13,7 @@ import {
 import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.10';
+export const VERSION = '0.4.11';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -180,11 +180,15 @@ export function matchScore(fixture,event) {
   return 10+home.filter(w=>s.includes(w)).length+away.filter(w=>s.includes(w)).length+(Number.isFinite(t)&&Math.abs(t-ref)<4*3600_000?5:0);
 }
 function addonPath(manifest,path) { const u=new URL(manifest);u.pathname=u.pathname.slice(0,-'manifest.json'.length)+path;return u.href; }
-function isDirect(s){
+function playbackUrl(value){
+  try{return ['https:','http:'].includes(new URL(value).protocol);}catch{return false;}
+}
+function isDirect(s, allowExternal){
   if (!s || typeof s !== 'object' || s.infoHash || s.fileIdx!==undefined || s.sources?.length)return false;
-  return ['url','externalUrl'].some(k=>{try{const u=new URL(s[k]);return ['https:','http:'].includes(u.protocol);}catch{return false;}});
+  return playbackUrl(s.url)||(allowExternal&&playbackUrl(s.externalUrl));
 }
 export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
+  const nativeOnly=String(env.NATIVE_ONLY||'').toLowerCase()==='true';
   // Independent providers are queried concurrently so an unavailable one
   // does not block the user's other stream options.
   const addonTask=Promise.allSettled(streamSources(sources).map(async source=>{
@@ -206,8 +210,12 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
     const variants=await Promise.allSettled(matches.map(async({m})=>{
       const result=await loadJSON(addonPath(source,
         'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),30,fetcher);
-      return (result.streams||[]).filter(isDirect).slice(0,12)
-        .map(s=>nativeAddonStream({...s,name:(String(addon.name||'Sport')+' · '+String(s.name||'Quelle')).slice(0,100)}));
+      return (result.streams||[]).filter(s=>isDirect(s,!nativeOnly)).slice(0,12)
+        .map(s=>{
+          const stream={...s,name:(String(addon.name||'Sport')+' · '+String(s.name||'Quelle')).slice(0,100)};
+          if(nativeOnly)delete stream.externalUrl;
+          return nativeAddonStream(stream);
+        });
     }));
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;
@@ -226,7 +234,7 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
   });
   const [all,daddy,native]=await Promise.all([addonTask,daddyTask,nativeTask]);
   const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
-  const players=String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
+  const players=!nativeOnly && String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
     ? externalDaddyPlayers(game,daddy.events,matchScore)
     : [];
   // Native entries are first; HTML players remain a clearly labeled fallback.
@@ -273,7 +281,7 @@ export async function handle(request,env={},fetcher=fetch) {
     if(url.pathname==='/health')return json({ok:true,version:VERSION,season:Number(env.SEASON)||seasonOf(),
       nativePlayback:{automaticPublicHls:String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()==='true',
         verifyConfiguredManifests:String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true',
-        providerTokenRenewal:false,packedSegments:false}},200,0);
+        nativeOnly:String(env.NATIVE_ONLY||'').toLowerCase()==='true',providerTokenRenewal:false,packedSegments:false}},200,0);
     if(url.pathname==='/generate'){
       const sources=safeUrls((url.searchParams.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean).slice(0,12));
       const prefix=sources.length?`/u/${encodeConfig(sources)}`:'';

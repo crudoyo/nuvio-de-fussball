@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.10 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.11 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -201,3 +201,5 @@ Version 0.4.7 hebt ausschließlich das begrenzte Playerseiten-Limit auf 4 MiB an
 Version 0.4.8 ignoriert optionale Antwortcookies im automatischen Resolver, ohne sie zu speichern oder zu senden. Ein Cookie-Header allein gilt nicht mehr als Nachweis einer nötigen Sitzung; tatsächliches HTTP 401/403 beendet weiterhin den Abruf. Rein deklarierte Wrapper der Form `function f(x){return atob(x);}` werden als Datenformat erkannt, ohne Seitencode auszuführen.
 
 Version 0.4.9 überspringt bekannte Spezialtransporte bereits vor dem Abruf. So bleibt das begrenzte Budget für bis zu acht Playerseiten mit gewöhnlichen Medienquellen verfügbar; Gesamtdeadline und Zugriffsprüfungen bleiben bestehen.
+
+Ab 0.4.11 filtert der produktive Worker mit `NATIVE_ONLY=true` Browserlinks aus DaddyLive und verbundenen Add-ons. Wenn für ein Spiel keine direkte Medienquelle verfügbar ist, kann die Quellenliste leer bleiben.

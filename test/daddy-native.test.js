@@ -169,6 +169,8 @@ test('automatic HLS appears before external fallbacks in the actual stream handl
     {DADDY_NATIVE_RESOLVE:'true',DADDY_WEB_PLAYERS:'true'});
   assert.equal(denied.length,1);assert.equal(denied[0].url,undefined);
   assert(denied[0].name.startsWith('Browser ·'));
+  const nativeOnly=await resolveStreams(fixture,[],fake,{DADDY_NATIVE_RESOLVE:'true',DADDY_WEB_PLAYERS:'true',NATIVE_ONLY:'true'});
+  assert.deepEqual(nativeOnly.map(stream=>stream.url),[media]);
 });
 test('follows bounded public player redirects only to known hosts',async()=>{
   const redirected='https://thedaddy.pk/cast/stream-426.php';
