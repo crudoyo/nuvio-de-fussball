@@ -79,7 +79,7 @@ test('public Sports Streams plus configured sports manifest can be bridged witho
     return new Response('not found',{status:404});
   };
   const result=await resolveStreams(match,[personal],fetcher);
-  assert.equal(result.length,2); // one per provider, duplicated URL dedupes below
+  assert.equal(result.length,1); // identical stream URLs from multiple providers are deduplicated
   assert(result.every(s=>s.url.startsWith('https:')));
   assert(result.every(s=>!s.infoHash));
 });
