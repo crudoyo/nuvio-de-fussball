@@ -9,7 +9,7 @@ import { espnTeamsUrl, attachFallbackCrests } from './crests.js';
 import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic
 } from './daddylive.js';
-export const VERSION = '0.4.0';
+export const VERSION = '0.4.1';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
