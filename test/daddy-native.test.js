@@ -61,6 +61,18 @@ test('provider transport requirements never trigger a playlist-token request',as
   assert.equal(result.status,'provider_transport_required');assert.equal(result.stream,null);
   assert.equal(seen.length,2);assert(seen.every(u=>!u.includes('playlist-token')));
 });
+test('an incompatible manifest does not hide an offered same-channel hub player',async()=>{
+  const root='https://thedaddy.pk/stream/stream-426.php';
+  const hub='https://thedaddy.pk/hub/stream-426.php';
+  const bad='https://cdn.example.org/unusable.m3u8';
+  const result=await resolveDaddyChannel('426',network({
+    [root]:()=>new Response(`<script>const SRC="${bad}";</script><button data-url="${hub}">Player</button>`),
+    [bad]:()=>new Response('<html>unavailable</html>'),
+    [hub]:()=>new Response(`const SRC="${media}";`)
+  }));
+  assert.equal(result.status,'resolved');
+  assert.equal(result.stream.url,media);
+});
 test('known custom frames do not consume the standard-player page budget',async()=>{
   const folders=['cast','watch','plus','casting','player'];
   const root='https://thedaddy.pk/stream/stream-426.php';

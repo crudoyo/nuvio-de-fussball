@@ -122,7 +122,13 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
       }
       count++;
       checks.pages++;
-      const response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,controller.signal,false,true);
+      let response;
+      try{
+        response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,controller.signal,false,true);
+      }catch(error){
+        if(!page.optional||error.message!=='upstream_http_error')throw error;
+        continue;
+      }
       page.url=response.url;
       seen.add(page.url);
       const origin=new URL(page.url).origin;
@@ -135,10 +141,15 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
         else if(new URL(media).pathname.toLowerCase().endsWith('.mpd'))status='dash_requires_configured_source';
         else{
           const headers={'User-Agent':AGENT,Referer:origin+'/',Origin:origin};
-          await checkHls(media,headers,fetcher,controller.signal);
-          const stream=nativeStreamRecord({url:media,headers,name:'DaddyLive · Kanal '+channelId});
-          stream.description='Öffentliche HLS-Konfiguration automatisch aufgelöst; Manifest und erstes Segment geprüft. Gerätewiedergabe nicht bestätigt.';
-          return {status:'resolved',stream,checks};
+          try{
+            await checkHls(media,headers,fetcher,controller.signal);
+            const stream=nativeStreamRecord({url:media,headers,name:'DaddyLive · Kanal '+channelId});
+            stream.description='Öffentliche HLS-Konfiguration automatisch aufgelöst; Manifest und erstes Segment geprüft. Gerätewiedergabe nicht bestätigt.';
+            return {status:'resolved',stream,checks};
+          }catch(error){
+            if(!['unsupported_manifest','empty_playlist','unsupported_segment_container','playlist_loop','playlist_depth_limit'].includes(error.message))throw error;
+            status=error.message;
+          }
         }
       }
       // The provider identifies its content iframe explicitly. Ignore ad frames.
@@ -149,11 +160,11 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
       // Only offered same-channel alternatives; never manufacture media addresses.
       for(const tag of html.matchAll(/<(?:button|a)\b[^>]*\bdata-url\s*=[^>]*>/gi)){
         const a=attributes(tag[0]),url=player(a['data-url'],page.url);
-        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player)/stream-'+channelId+'\\.php$'))&&!seen.has(url)&&queue.length<12){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
+        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player|hub)/stream-'+channelId+'\\.php$'))&&!seen.has(url)&&queue.length<12){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
       }
       // Current Android catalogue uses this public channel-selection page.
       // Read its offered buttons too; the legacy stream page may omit them.
-      if(page.url===start)queue.push({url:'https://thedaddy.pk/watch.php?id='+String(channelId).trim(),referer:page.url});
+      if(page.url===start)queue.push({url:'https://thedaddy.pk/watch.php?id='+String(channelId).trim(),referer:page.url,optional:true});
     }
     return {status,stream:null,checks};
   }catch(error){
