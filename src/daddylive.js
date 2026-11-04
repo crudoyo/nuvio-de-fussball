@@ -195,10 +195,16 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
     ];
     for(const source of candidates){
       try{
-        const events=await downloadSchedule(source.url,fetcher,Boolean(source.protectedApi),source.format||'json');
-        if(events.length){
-          const last=Math.max(...events.map(e=>Date.parse(e.startTime)).filter(Number.isFinite));
-          const now=Date.now();
+        const downloaded=await downloadSchedule(source.url,fetcher,Boolean(source.protectedApi),source.format||'json');
+        const now=Date.now();
+        // A current homepage can contain a few unrelated historical events.
+        // Never expose stale fixtures as current simply because today's events exist.
+        const events=downloaded.filter(e=>{
+          const t=Date.parse(e.startTime);
+          return Number.isFinite(t) && t>=now-7*86400000;
+        });
+        if(downloaded.length && !events.length) {
+          const last=Math.max(...downloaded.map(e=>Date.parse(e.startTime)).filter(Number.isFinite));
           if(Number.isFinite(last) && last<now-7*86400000)
             throw new Error('Stale schedule ('+new Date(last).toISOString().slice(0,10)+')');
         }
