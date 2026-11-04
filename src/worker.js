@@ -6,13 +6,15 @@
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
 import { espnTeamsUrl, attachFallbackCrests } from './crests.js';
-export const VERSION = '0.3.2';
+export const VERSION = '0.3.3';
 const API = 'https://api.openligadb.de';
-const MAX_UPSTREAMS = 6;
+const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
 const BUILTIN_MANIFESTS = [
   'https://sports.highfly.to/manifest.json',
+  'https://sportsfree.highfly.to/manifest.json',
+  'https://sportsfree-us2.highfly.to/manifest.json',
   'https://nuvio.moaqeel6679.my.id/manifest.json'
 ];
 function streamSources(personal = []) {
@@ -209,7 +211,9 @@ export async function resolveStreams(game, sources, fetcher=fetch) {
 export async function diagnoseSources(personal=[], fetcher=fetch) {
   const all=streamSources(personal);
   return Promise.all(all.map(async (url,i)=>{
-    const id=url.includes('sports.highfly.to')?'Sports Streams':
+    const id=url.includes('sports.highfly.to')?'Sports Streams (Hauptserver)':
+      url.includes('sportsfree.highfly.to')?'Sports Streams (Mirror 1)':
+      url.includes('sportsfree-us2.highfly.to')?'Sports Streams (Mirror 2)':
       url.includes('nuvio.moaqeel6679.my.id')?'Nuvio Live Sports':
       url.includes('pengu.uk')?'PenguPlay':'Persönlicher Anbieter '+(i+1);
     try {
