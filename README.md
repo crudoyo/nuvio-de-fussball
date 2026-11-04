@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.2.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Die Daten stammen von [OpenLigaDB](https://openligadb.de/) (ODbL).
+**Version 0.2.1 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Die Daten stammen von [OpenLigaDB](https://openligadb.de/) (ODbL).
 
 ## Funktionen
 
