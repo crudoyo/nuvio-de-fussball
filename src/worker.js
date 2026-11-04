@@ -11,6 +11,7 @@ import {
   diagnoseDaddyFixture
 } from './daddylive.js';
 import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
+import {verifiedNativeStreams} from './manifest-check.js';
 export const VERSION = '0.4.5';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
@@ -217,7 +218,9 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
   const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
   // Only the documented public HTML player URL is exposed; this is NOT an
   // HLS extractor. Opt-in when the operator has permission to open these players.
-  const native=daddy.reachable?nativeMappedStreams(game,daddy.events,matchScore,env):[];
+  let native=daddy.reachable?nativeMappedStreams(game,daddy.events,matchScore,env):[];
+  if(String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true')
+    native=await verifiedNativeStreams(native,fetcher);
   const players=String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
     ? externalDaddyPlayers(game,daddy.events,matchScore)
     : [];

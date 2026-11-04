@@ -103,4 +103,16 @@ test('the stream endpoint returns native HLS first and external HTML fallback',a
   assert.equal(streams[0].behaviorHints.notWebReady,true);
   assert.equal(streams[1].externalUrl,
     'https://thedaddy.pk/stream/stream-426.php');
+  const rejected=await resolveStreams(game,[],fake,{...config,NATIVE_VERIFY_MANIFESTS:'true'});
+  assert.equal(rejected.length,1);
+  assert.equal(rejected[0].externalUrl,streams[1].externalUrl);
+  const checked=await resolveStreams(game,[],async (address,options)=>{
+    if(address===url){
+      assert.equal(options.redirect,'manual');
+      return new Response('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\na.ts');
+    }
+    return fake(address);
+  },{...config,NATIVE_VERIFY_MANIFESTS:'true'});
+  assert.equal(checked[0].url,url);
+  assert.equal(checked[1].externalUrl,streams[1].externalUrl);
 });
