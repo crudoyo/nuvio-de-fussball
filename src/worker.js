@@ -5,7 +5,7 @@
  */
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
-export const VERSION = '0.3.0';
+export const VERSION = '0.3.1';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 6;
 // Known public addon endpoints: use their catalog/stream protocol, not scraping.
@@ -137,7 +137,7 @@ function status(m,now=Date.now()) {
 }
 function meta(m,league,origin,prefix='') {
   const id=gameId(league,m), home=m.team1.teamName,away=m.team2.teamName;
-  const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.svg`;
+  const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.svg?v=${VERSION}`;
   const score=m.matchIsFinished && m.matchResults?.length? m.matchResults.find(r=>r.resultTypeID===2)||m.matchResults.at(-1):null;
   const description=`${league.name} · ${dateLabel(m)} · ${status(m)}. ${home} gegen ${away}.`+(score?` Endstand: ${score.pointsTeam1}:${score.pointsTeam2}.`:'')+' Videostreams nur, wenn ein verbundenes Sport-Add-on diese Begegnung eindeutig zuordnet.';
   return {id,type:'tv',name:`${home} – ${away}`,poster,background:poster,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:dateLabel(m),released:startTime(m)?.toISOString(),behaviorHints:{defaultVideoId:id}};
