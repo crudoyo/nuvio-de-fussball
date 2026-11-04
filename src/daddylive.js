@@ -208,6 +208,50 @@ export function matchDaddyEvents(game,events,matchScore) {
       Math.abs(Date.parse(e.startTime)-kickoff)<=8*3600000)
     .sort((a,b)=>b.score-a.score).slice(0,3);
 }
+/**
+ * Explain why a fixture did not match. Only expose public event names and
+ * schedule dates, never playlist URLs, API keys or personal addon manifests.
+ */
+export function diagnoseDaddyFixture(game, events, matchScore) {
+  const kickoff=Date.parse(game?.matchDateTimeUTC||'');
+  const all=(Array.isArray(events)?events:[])
+    .filter(e=>Number.isFinite(Date.parse(e?.startTime)) && e?.name)
+    .map(e=>({
+      name:String(e.name).slice(0,180),
+      startTime:e.startTime,
+      channelCount:Array.isArray(e.channels)?e.channels.length:0
+    }));
+  const times=all.map(e=>Date.parse(e.startTime)).sort((a,b)=>a-b);
+  const dates=[...new Set(times.map(x=>new Date(x).toISOString().slice(0,10)))];
+  const date=Number.isFinite(kickoff)?new Date(kickoff).toISOString().slice(0,10):null;
+  const sameDay=date?all.filter(e=>e.startTime.slice(0,10)===date):[];
+  const matches=Number.isFinite(kickoff)?
+    matchDaddyEvents(game,events,matchScore):[];
+  const byDistance=Number.isFinite(kickoff)
+    ? all.slice().sort((a,b)=>
+        Math.abs(Date.parse(a.startTime)-kickoff)-Math.abs(Date.parse(b.startTime)-kickoff))
+    : [];
+  return {
+    fixture:{
+      home:String(game?.team1?.teamName||''),
+      away:String(game?.team2?.teamName||''),
+      kickoffUTC:Number.isFinite(kickoff)?new Date(kickoff).toISOString():null
+    },
+    scheduleCoverage:{
+      totalFootballEvents:all.length,
+      from:times.length?new Date(times[0]).toISOString():null,
+      to:times.length?new Date(times[times.length-1]).toISOString():null,
+      datesUTC:dates.slice(0,21)
+    },
+    eventsOnFixtureDate:sameDay.length,
+    sampleSameDayEvents:sameDay.slice(0,20),
+    nearestEvents:sameDay.length?[]:byDistance.slice(0,8),
+    assessment:matches.length?'matched':
+      !times.length?'no_football_events':
+      !sameDay.length?'fixture_date_not_in_schedule':
+      'fixture_not_matched_to_schedule'
+  };
+}
 /** Public HTML player entry, not a decrypted playlist nor guaranteed playable. */
 export function externalDaddyPlayers(game,events,matchScore) {
   const matches=matchDaddyEvents(game,events,matchScore);
