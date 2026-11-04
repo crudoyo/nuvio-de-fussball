@@ -10,7 +10,7 @@ import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
   diagnoseDaddyFixture
 } from './daddylive.js';
-export const VERSION = '0.4.3';
+export const VERSION = '0.4.4';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -268,6 +268,31 @@ export async function handle(request,env={},fetcher=fetch) {
     const match=pathname.match(/^\/u\/([A-Za-z0-9_-]{1,3500})(\/.*)$/);
     if(match){pathname=match[2];prefix=`/u/${match[1]}`;sources=decodeConfig(match[1]);}
     if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
+    if(pathname==='/debug/daddy-lookup.json'){
+      const home=clean(url.searchParams.get('home')).slice(0,90);
+      const away=clean(url.searchParams.get('away')).slice(0,90);
+      const kickoff=clean(url.searchParams.get('kickoff'));
+      const parsed=Date.parse(kickoff);
+      if(!home||!away||home===away||!/^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z$/.test(kickoff)
+        ||!Number.isFinite(parsed))
+        return json({error:'home, away und kickoff (UTC, ISO-8601) erforderlich'},400,0);
+      const fixture={
+        team1:{teamName:home},team2:{teamName:away},
+        matchDateTimeUTC:new Date(parsed).toISOString()
+      };
+      const daddy=await getDaddySchedule(env,fetcher);
+      const matched=matchDaddyEvents(fixture,daddy.events,matchScore);
+      return json({
+        version:VERSION,
+        daddy:daddyPublicDiagnostic(daddy),
+        matchedEvents:matched.map(e=>({
+          name:e.name,startTime:e.startTime,
+          channels:e.channels.map(c=>({id:c.id,name:c.name}))
+        })),
+        matchDiagnosis:diagnoseDaddyFixture(fixture,daddy.events,matchScore),
+        externalPlayerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
+      },200,0);
+    }
     const daddyMatch=pathname.match(/^\/debug\/daddy-match\/([^/]+)\.json$/);
     if(daddyMatch) {
       const available=await leagues(env,fetcher),found=parseGame(daddyMatch[1],available);
