@@ -186,8 +186,8 @@ export async function resolveStreams(game, sources, fetcher=fetch) {
     const variants=await Promise.allSettled(matches.map(async({m})=>{
       const result=await loadJSON(addonPath(source,
         'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),30,fetcher);
-      return (result.streams||[]).filter(isDirect)
-        .map(s=>({...s,name:String(addon.name||'Sport')+' · '+String(s.name||'Quelle')}).slice(0,3).map(s=>({...s,name:s.name.slice(0,100)})));
+      return (result.streams||[]).filter(isDirect).slice(0,12)
+        .map(s=>({...s,name:(String(addon.name||'Sport')+' · '+String(s.name||'Quelle')).slice(0,100)}));
     }));
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;
