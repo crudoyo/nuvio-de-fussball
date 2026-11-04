@@ -106,10 +106,11 @@ function badgeArt(name, url, x) {
 }
 export async function makeMatchPoster(match, competition, kickoffLabel, matchStatus, fetcher = fetch) {
   const home = match.team1?.teamName || 'Heim', away = match.team2?.teamName || 'Gast';
-  const [left, right] = await Promise.all([
-    badgeData(match.team1?.teamIconUrl, fetcher),
-    badgeData(match.team2?.teamIconUrl, fetcher)
-  ]);
+  async function badge(team) {
+    return await badgeData(team?.teamIconUrl, fetcher) ||
+      await badgeData(team?.teamIconBackupUrl, fetcher);
+  }
+  const [left, right] = await Promise.all([badge(match.team1),badge(match.team2)]);
   return '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="405" viewBox="0 0 720 405">'
     + '<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#092a32"/><stop offset="1" stop-color="#173b46"/></linearGradient></defs>'
     + '<rect width="720" height="405" fill="url(#bg)"/>'
