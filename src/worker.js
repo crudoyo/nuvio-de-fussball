@@ -10,7 +10,8 @@ import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
   diagnoseDaddyFixture
 } from './daddylive.js';
-export const VERSION = '0.4.4';
+import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
+export const VERSION = '0.4.5';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -204,7 +205,7 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
       const result=await loadJSON(addonPath(source,
         'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),30,fetcher);
       return (result.streams||[]).filter(isDirect).slice(0,12)
-        .map(s=>({...s,name:(String(addon.name||'Sport')+' · '+String(s.name||'Quelle')).slice(0,100)}));
+        .map(s=>nativeAddonStream({...s,name:(String(addon.name||'Sport')+' · '+String(s.name||'Quelle')).slice(0,100)}));
     }));
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;
@@ -216,10 +217,12 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
   const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
   // Only the documented public HTML player URL is exposed; this is NOT an
   // HLS extractor. Opt-in when the operator has permission to open these players.
+  const native=daddy.reachable?nativeMappedStreams(game,daddy.events,matchScore,env):[];
   const players=String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
     ? externalDaddyPlayers(game,daddy.events,matchScore)
     : [];
-  return [...new Map([...found,...players].map(s=>[s.url||s.externalUrl,s])).values()];
+  // Native entries are first; HTML players remain a clearly labeled fallback.
+  return [...new Map([...native,...found,...players].map(s=>[s.url||s.externalUrl,s])).values()];
 }
 export async function diagnoseSources(personal=[], fetcher=fetch, env={}) {
   const all=streamSources(personal);
