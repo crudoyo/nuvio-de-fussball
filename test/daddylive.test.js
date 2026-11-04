@@ -142,7 +142,7 @@ test('301 redirect to HTML homepage is reported, not treated as an empty schedul
     return new Response(null,{status:301,headers:{location:'https://thedaddy.pk/'}});
   });
   assert.equal(result.reachable,false);
-  assert.equal(result.attempts.length,2);
+  assert.equal(result.attempts.length,3);
   assert.equal(result.attempts[0].reason,'HTTP 404');
   assert.equal(result.attempts[1].reason,'Public schedule redirected away from JSON');
 });
@@ -157,14 +157,15 @@ test('protected API never follows redirects containing its key',async()=>{
   });
   assert.equal(result.reachable,false);
   assert.equal(result.attempts[0].reason,'Protected API redirect blocked');
-  assert.equal(calls.length,3);
+  assert.equal(calls.length,4);
   assert(!calls.some(u=>u.includes('attacker.example')));
   assert(!JSON.stringify(result).includes(key));
 });
 test('public JSON error documents are not misclassified as successful schedules',async()=>{
   const result=await getDaddySchedule({},async()=>asJson({error:'not found'}));
   assert.equal(result.reachable,false);
-  assert(result.attempts.every(x=>x.reason==='Invalid schema'));
+  assert(result.attempts.slice(0,2).every(x=>x.reason==='Invalid schema'));
+  assert.equal(result.attempts[2].reason,'Homepage schedule unavailable');
 });
 
 test('unmatched future game explains dates covered by DaddyLive schedule',()=>{
