@@ -7,9 +7,10 @@ import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
 import { espnTeamsUrl, attachFallbackCrests } from './crests.js';
 import {
-  getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic
+  getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
+  diagnoseDaddyFixture
 } from './daddylive.js';
-export const VERSION = '0.4.1';
+export const VERSION = '0.4.2';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -283,6 +284,7 @@ export async function handle(request,env={},fetcher=fetch) {
           name:e.name,startTime:e.startTime,
           channels:e.channels.map(c=>({id:c.id,name:c.name}))
         })),
+        matchDiagnosis:diagnoseDaddyFixture(game,daddy.events,matchScore),
         externalPlayerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
       },200,0);
     }
