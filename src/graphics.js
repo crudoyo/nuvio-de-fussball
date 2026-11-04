@@ -4,7 +4,7 @@
  * to team initials. Embedding preserves logos in Nuvio/Fire TV SVG renderers.
  */
 const badgeCache = new Map();
-const MAX_BADGE_BYTES = 140000;
+const MAX_BADGE_BYTES = 240000;
 const BADGE_TTL = 4 * 3600000;
 const escape = text => String(text ?? '').replace(/[&<>"']/g, x =>
   ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'})[x]);
@@ -25,25 +25,69 @@ function toBase64(bytes) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 4096));
   return btoa(binary);
 }
-export async function badgeData(url, fetcher = fetch) {
-  const safe = safeBadgeUrl(url);
+/**
+ * Wikimedia commonly provides team crests as raw SVG, which cannot safely be
+ * embedded in the existing image-data URI pipeline. Ask Wikimedia's own
+ * thumbnail service for a compact PNG rendition instead.
+ */
+export function badgeImageUrl(raw) {
+  const safe = safeBadgeUrl(raw);
   if (!safe) return null;
-  const old = badgeCache.get(safe);
-  if (old && old.until > Date.now()) return old.value;
-  try {
-    const res = await fetcher(safe, {redirect:'manual', signal:AbortSignal.timeout(4000),
-      headers:{accept:'image/png,image/jpeg,image/webp,image/gif'}});
+  const u = new URL(safe);
+  if (u.hostname !== 'upload.wikimedia.org') return safe;
+  const match = u.pathname.match(/^\/wikipedia\/(commons|en|de|fr|es|it)\/(?:thumb\/)?([a-f0-9])\/([a-f0-9]{2})\/([^/]+\.svg)(?:\/[^/]+)?$/i);
+  if (!match) return safe;
+  const [,project,first,second,file]=match;
+  return u.origin + '/wikipedia/' + project + '/thumb/' + first + '/' + second
+    + '/' + file + '/240px-' + file + '.png';
+}
+async function retrieveBadge(url, fetcher) {
+  let current = badgeImageUrl(url);
+  if (!current) return null;
+  const host = new URL(current).hostname;
+  for (let i=0; i<3; i++) {
+    const res = await fetcher(current, {
+      redirect:'manual',
+      signal:AbortSignal.timeout(5000),
+      headers:{accept:'image/png,image/jpeg,image/webp,image/gif'}
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (!location) return null;
+      const next = new URL(location,current);
+      const safe = safeBadgeUrl(next.href);
+      // Don't let an external logo source redirect into a different host.
+      if (!safe || next.hostname !== host) return null;
+      current = badgeImageUrl(safe);
+      continue;
+    }
+    if (!res.ok) return null;
     const type = (res.headers.get('content-type') || '').split(';')[0].toLowerCase();
     const length = Number(res.headers.get('content-length') || 0);
-    if (!res.ok || !['image/png','image/jpeg','image/webp','image/gif'].includes(type) ||
-      length > MAX_BADGE_BYTES) return null;
+    if (!['image/png','image/jpeg','image/webp','image/gif'].includes(type) ||
+        length > MAX_BADGE_BYTES) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     if (!bytes.length || bytes.length > MAX_BADGE_BYTES) return null;
-    const value = 'data:' + type + ';base64,' + toBase64(bytes);
-    if (badgeCache.size > 250) badgeCache.clear();
-    badgeCache.set(safe, {value, until: Date.now() + BADGE_TTL});
-    return value;
-  } catch { return null; }
+    return 'data:' + type + ';base64,' + toBase64(bytes);
+  }
+  return null;
+}
+export async function badgeData(url, fetcher = fetch) {
+  const imageUrl = badgeImageUrl(url);
+  if (!imageUrl) return null;
+  const old = badgeCache.get(imageUrl);
+  if (old && old.until > Date.now()) return old.value;
+  let result = null;
+  try {
+    result = await retrieveBadge(imageUrl,fetcher);
+  } catch { /* Missing, expired or inaccessible image: initials stay visible. */ }
+  // Cache successful logos, and retry missing ones after five minutes.
+  if (badgeCache.size > 250) badgeCache.clear();
+  badgeCache.set(imageUrl, {
+    value:result,
+    until:Date.now() + (result ? BADGE_TTL : 300000)
+  });
+  return result;
 }
 function abbreviate(name) {
   return String(name || '?').replace(/\b(FC|SC|SV|VfL|1\.)\b/gi,'').trim()
