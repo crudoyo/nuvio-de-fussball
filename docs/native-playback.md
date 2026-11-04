@@ -1,5 +1,32 @@
 # Native DaddyLive-Wiedergabe: Untersuchung vom 04.11.2026
 
+## Ergänzung für Version 0.4.6
+
+Die nachfolgende ursprüngliche Analyse beschreibt die Grenze des Android-
+Spezialtransports. 0.4.6 ergänzt einen begrenzten automatischen Resolver für
+gewöhnliches öffentliches HLS: benannte Playerframes und angebotene Alternativen
+desselben Kanals, feste Player-Hostliste, maximal sechs Playerseiten mit jeweils
+höchstens zwei geprüften Redirects, drei Playlist-Ebenen, sechs Sekunden Gesamt-
+zeit und begrenzte Antwortgrößen. Maximal zwei passende Sender werden pro
+Stream-Anfrage geprüft. Es wird kein JavaScript ausgeführt; lediglich literale
+Adressen und explizite `atob`-Datenfragmente werden gelesen.
+
+Vor einem nativen Ergebnis muss ein HLS-Manifest und ein begrenzter Abruf des
+ersten Segments eine gewöhnliche TS-/MP4-Kennung liefern. DASH bleibt über die
+vorhandene manuelle Quellenkonfiguration unterstützt. Cookie-Sitzungen,
+Playlist-Schlüssel, signierte Adressen und bekannte Spezialtransporte werden
+im automatischen Resolver abgewiesen. Es gibt weder einen Medienproxy noch
+Token-Erneuerung, Entpackung oder DRM-Verarbeitung.
+
+`DADDY_NATIVE_RESOLVE=true` ist in der ausgelieferten Wrangler-Konfiguration
+aktiviert. Native Ergebnisse werden vor Browserlinks angeboten. Ein fehlender
+Direktstream bleibt als solcher erkennbar: Browser-Einträge erhalten einen
+entsprechenden Namen; `/debug/daddy-native/<id>.json` nennt den Prüfstatus ohne
+URLs, Header oder Tokens. Die neue Versionskennung wird in Paket, Manifest und
+Health-Antwort konsistent getestet. Die Pipeline prüft die öffentliche Worker-
+Adresse nach dem Deploy zusätzlich auf die erwartete Version. Der Live-Status
+eines Kanals wird separat ausgegeben und nicht mit Gerätewiedergabe gleichgesetzt.
+
 ## Ergebnis und geprüfte Quellstände
 
 Ein automatischer DaddyLive-Nativmodus ist mit dem untersuchten Stream-Vertrag

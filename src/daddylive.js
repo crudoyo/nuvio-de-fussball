@@ -295,7 +295,7 @@ export function externalDaddyPlayers(game,events,matchScore) {
       const externalUrl=daddyPlayerUrl(channel.id);
       if(!externalUrl||seen.has(externalUrl))continue;
       seen.add(externalUrl);
-      streams.push({name:'DaddyLive · '+channel.name,externalUrl,
+      streams.push({name:'Browser · DaddyLive · '+channel.name,externalUrl,
         description:'Externe HTML-Playerseite (kein nativer HLS-Stream)'});
       if(streams.length>=12)return streams;
     }
