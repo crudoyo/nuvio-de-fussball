@@ -8,6 +8,8 @@
  * No iframe scraping, token reconstruction, DRM workarounds or CDN proxying.
  * Documented channel URLs are HTML player pages, NOT native HLS streams.
  */
+import { parseDaddyHomepage } from './daddy-homepage.js';
+export const DADDY_HOMEPAGE = 'https://thedaddy.pk/';
 export const DADDY_PUBLIC_SCHEDULE =
   'https://dlstreams.st/schedule/schedule-generated.json';
 export const DADDY_CURRENT_SCHEDULE =
@@ -28,6 +30,7 @@ function text(value) {
 }
 const isFootballCategory = value =>
   /(?:soccer|football|fussball|fußball|fútbol|futbol)/i.test(text(value));
+const ABBR_MONTHS={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
 const MONTHS = {
   january:0,february:1,march:2,april:3,may:4,june:5,
   july:6,august:7,september:8,october:9,november:10,december:11
@@ -37,16 +40,17 @@ export function parseUkScheduleDate(dayLabel, time) {
   const clock = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(time||'').trim());
   if(!clock) return null;
   const label=text(dayLabel);
-  const m=/\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})\b/i.exec(label);
+  const m=/\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(20\d{2})\b/i.exec(label);
   let y,month,day;
   if(m) {
-    day=Number(m[1]);month=MONTHS[m[2].toLowerCase()];y=Number(m[3]);
+    day=Number(m[1]);month=MONTHS[m[2].toLowerCase()]??ABBR_MONTHS[m[2].toLowerCase().slice(0,3)];y=Number(m[3]);
   } else {
     const iso=/\b(20\d{2})-(\d{2})-(\d{2})\b/.exec(label);
     if(!iso)return null;
     y=Number(iso[1]);month=Number(iso[2])-1;day=Number(iso[3]);
   }
   const date = new Date(Date.UTC(y,month,day,Number(clock[1]),Number(clock[2])));
+  if(month===undefined)return null;
   if(date.getUTCFullYear()!==y || date.getUTCMonth()!==month ||
     date.getUTCDate()!==day)return null;
   // The documented API labels schedule times UK GMT, i.e. UTC.
@@ -112,7 +116,7 @@ function safeScheduleRedirect(raw, base) {
     return u.href;
   } catch {return null;}
 }
-async function downloadSchedule(url, fetcher, protectedApi=false) {
+async function downloadSchedule(url, fetcher, protectedApi=false, format='json') {
   let current=url;
   for (let redirects=0; redirects<=3; redirects++) {
     const response=await fetcher(current,{
@@ -121,6 +125,17 @@ async function downloadSchedule(url, fetcher, protectedApi=false) {
       signal:AbortSignal.timeout(8500)
     });
     if (response.status>=300 && response.status<400) {
+      if(format==='html') {
+        const location=response.headers.get('location');
+        if(!location)throw new Error('HTTP '+response.status+' (no Location)');
+        const target=new URL(location,current);
+        if(target.protocol!=='https:' || !['thedaddy.pk','www.thedaddy.pk'].includes(target.hostname)
+          || target.pathname!=='/' || target.search || target.hash)
+          throw new Error('Homepage redirect blocked');
+        if(target.href===current)throw new Error('Redirect loop');
+        current=target.href;
+        continue;
+      }
       if (protectedApi) throw new Error('Protected API redirect blocked');
       const location=response.headers.get('location');
       if(!location)throw new Error('HTTP '+response.status+' (no Location)');
@@ -134,11 +149,16 @@ async function downloadSchedule(url, fetcher, protectedApi=false) {
     const length=Number(response.headers.get('content-length')||0);
     if(length>MAX_BODY_BYTES)throw new Error('Payload too large');
     const contentType=String(response.headers.get('content-type')||'').toLowerCase();
-    if(contentType.includes('text/html'))throw new Error('Website HTML instead of schedule JSON');
+    if(format==='json' && contentType.includes('text/html'))throw new Error('Website HTML instead of schedule JSON');
     const raw=await response.text();
     if(raw.length>MAX_BODY_BYTES)throw new Error('Payload too large');
     let payload;
-    try {payload=JSON.parse(raw);}catch{throw new Error('Invalid JSON');}
+    if(format==='html') {
+      payload=parseDaddyHomepage(raw);
+      if(!payload)throw new Error('Homepage schedule unavailable');
+    } else {
+      try {payload=JSON.parse(raw);}catch{throw new Error('Invalid JSON');}
+    }
     if(payload?.success===false)throw new Error('API denied request');
     if(!payload || typeof payload!=='object' || Array.isArray(payload))
       throw new Error('Invalid schema');
@@ -170,11 +190,18 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
     const candidates=[
       ...(key?[{name:'DaddyLive API (Schlüssel)',url:apiUrl(key),protectedApi:true}]:[]),
       {name:'DaddyLive aktueller JSON-Pfad',url:DADDY_CURRENT_SCHEDULE},
-      {name:'DaddyLive früherer JSON-Pfad',url:DADDY_PUBLIC_SCHEDULE}
+      {name:'DaddyLive früherer JSON-Pfad',url:DADDY_PUBLIC_SCHEDULE},
+      {name:'DaddyLive aktuelle Webseite',url:DADDY_HOMEPAGE,format:'html'}
     ];
     for(const source of candidates){
       try{
-        const events=await downloadSchedule(source.url,fetcher,Boolean(source.protectedApi));
+        const events=await downloadSchedule(source.url,fetcher,Boolean(source.protectedApi),source.format||'json');
+        if(events.length){
+          const last=Math.max(...events.map(e=>Date.parse(e.startTime)).filter(Number.isFinite));
+          const now=Date.now();
+          if(Number.isFinite(last) && last<now-7*86400000)
+            throw new Error('Stale schedule ('+new Date(last).toISOString().slice(0,10)+')');
+        }
         const result={reachable:true,source:source.name,events,attempts,
           footballEvents:events.length,channelCount:
             new Set(events.flatMap(x=>x.channels.map(c=>c.id))).size};
@@ -185,11 +212,12 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
         const allowedReasons=new Set([
           'Invalid JSON','Invalid schema','API denied request','Payload too large',
           'Protected API redirect blocked','Public schedule redirected away from JSON',
-          'Website HTML instead of schedule JSON','Too many redirects','Redirect loop'
+          'Website HTML instead of schedule JSON','Too many redirects','Redirect loop',
+          'Homepage schedule unavailable','Homepage redirect blocked'
         ]);
         attempts.push({source:source.name,
           reason:/^HTTP \d{3}(?: \(no Location\))?$/.test(msg)?msg:
-            allowedReasons.has(msg)?msg:'Not reachable'});
+            allowedReasons.has(msg)||/^Stale schedule \(20\d{2}-\d{2}-\d{2}\)$/.test(msg)?msg:'Not reachable'});
       }
     }
     const result={reachable:false,source:null,events:[],attempts,
