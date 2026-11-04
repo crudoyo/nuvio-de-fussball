@@ -5,6 +5,7 @@
   "compatibility_date": "2026-10-01",
   "vars": {
     "SEASON": "2026",
-    "DADDY_WEB_PLAYERS": "true"
+    "DADDY_WEB_PLAYERS": "true",
+    "NATIVE_VERIFY_MANIFESTS": "true"
   }
 }
