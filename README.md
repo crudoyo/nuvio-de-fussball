@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.3.3 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -8,7 +8,7 @@
 - **Neu:** UEFA Champions League (OpenLigaDB, Kürzel `ucl`), Europa League und Conference League (ESPN-Soccer-Spielplan-Adapter, ohne API-Schlüssel).
 - Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status; 24 Stunden zurück und 30 Tage voraus. Die Poster enthalten, soweit verfügbar, beide **Vereinswappen** direkt in der SVG-Datei und kurze Mannschaftsnamen.
 - Konfigurationsseite `/configure` für bis zu sechs **exakte HTTPS-Manifest-URLs** aus zusätzlichen Sport-Add-ons (insbesondere die persönliche Nuvio-Live-Sports- oder PenguPlay-Live-TV-URL).
-- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuvio.moaqeel6679.my.id`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Keine eigenen DaddyLive-Scraper oder P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
+- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuvio.moaqeel6679.my.id`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Direkter DaddyLive-Spielplanadapter und dokumentierte externe HTML-Playerlinks. Keine Player-Entschlüsselung, keine nativen Daddy-HLS-Streams und keine P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
 
 ### Einschränkungen
@@ -94,3 +94,17 @@ Bei jedem Push auf `main` prüft der Workflow [Worker checks](.github/workflows/
 The worker checks the official free instances `sports.highfly.to`, `sportsfree.highfly.to`, and `sportsfree-us2.highfly.to`, each via their standard Stremio manifest endpoint. The alternate domains were publicly announced by the Sports Streams developer. If the primary host blocks the Worker (HTTP 403), other instances can still return match and stream data. A mirror is not guaranteed to work: inspect `/debug/sources.json` for actual availability.
 
 The public Nuvio Live Sports host may return HTTP 530; this cannot be fixed in the Worker. Users may specify their own working manifest URLs on `/configure` and install the newly generated personal football addon link. Personal manifest addresses may contain access tokens; do not post them publicly.
+
+## Direkter DaddyLive-Spielplanadapter (v0.4.0)
+
+Der Worker liest unabhängig von den blockierten Sport-Add-ons einen öffentlich dokumentierten DaddyLive-JSON-Spielplan von `https://dlstreams.st/schedule/schedule-generated.json`. Die Erreichbarkeit aus Cloudflare ist nicht garantiert.
+
+- Unterstützt die Kategorien `Football` und `Soccer` sowie UK-GMT-Tagesüberschriften, `channels` und `channels2` mit eindeutigen Kanal-IDs.
+- Mannschaftsabgleich und Anstoßzeit müssen übereinstimmen, bevor ein Kanal einem unserer Spiele zugeordnet wird.
+- Für dokumentierte Kanal-IDs werden bei einem Treffer externe HTML-Playerseiten im Muster `https://thedaddy.pk/stream/stream-<id>.php` ausgegeben, **keine direkten HLS-/M3U8-Streams**. Die Nuvio-Wiedergabe ist nicht garantiert.
+- Die Variable `DADDY_WEB_PLAYERS` steht in `wrangler.jsonc` auf `true`. Auf `false` ändern, um die externen Playerlinks abzuschalten.
+- Optional kannst du einen autorisierten API-Schlüssel als Cloudflare-Secret `DADDY_API_KEY` speichern. Dann fragt der Worker zuerst die dokumentierte geschützte Schedule-API ab. Niemals einen API-Schlüssel in GitHub oder im persönlichen Manifest veröffentlichen.
+- `/debug/sources.json` zeigt auch `DaddyLive (direkter Spielplan)` mit Erreichbarkeit, Zahl der Fußballveranstaltungen und Kanal-IDs sowie Fehlergründen, jedoch ohne Zugangsschlüssel.
+- `/debug/daddy-match/defootball_bl1_<MatchID>.json` zeigt für eine konkrete Begegnung die zugeordneten Veranstaltungen und Sender ohne Playlist-Tokens.
+
+**Grenze:** Der externe Player besteht aus HTML, nicht aus einer für Nuvio nativ abspielbaren Mediendatei. Die komplexe Entschlüsselung kurzlebiger, geschützter Video-URLs aus dem Referenzprojekt wird nicht übernommen. Nur mit entsprechenden Wiedergaberechten verwenden.
