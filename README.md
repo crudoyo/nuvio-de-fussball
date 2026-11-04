@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.5 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.6 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -8,7 +8,7 @@
 - **Neu:** UEFA Champions League (OpenLigaDB, Kürzel `ucl`), Europa League und Conference League (ESPN-Soccer-Spielplan-Adapter, ohne API-Schlüssel).
 - Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status; 24 Stunden zurück und 30 Tage voraus. Die Poster enthalten, soweit verfügbar, beide **Vereinswappen** direkt in der SVG-Datei und kurze Mannschaftsnamen.
 - Konfigurationsseite `/configure` für bis zu sechs **exakte HTTPS-Manifest-URLs** aus zusätzlichen Sport-Add-ons (insbesondere die persönliche Nuvio-Live-Sports- oder PenguPlay-Live-TV-URL).
-- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuvio.moaqeel6679.my.id`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Direkter DaddyLive-Spielplanadapter und dokumentierte externe HTML-Playerlinks. Keine Player-Entschlüsselung, keine nativen Daddy-HLS-Streams und keine P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
+- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuvio.moaqeel6679.my.id`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Direkter DaddyLive-Spielplanadapter und dokumentierte externe HTML-Playerlinks. Begrenzte automatische Auflösung normaler öffentlicher HLS-Quellen; keine Player-Entschlüsselung und keine P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
 
 ### Einschränkungen
@@ -181,7 +181,11 @@ Dies ist nur ein **Formatbeispiel**, keine abspielbare URL. Ohne konfigurierte Q
 
 **Sicherheitsgrenze:** Der Worker ist öffentlich erreichbar. Hinterlege **keine** Abonnement-URLs, Session-Cookies, DRM-Lizenzen, privaten Tokens, Signaturparameter oder Anmeldedaten in der Map. Credential-Parameter und lokale HTTP-Ziele werden zurückgewiesen; nur HTTPS-Medienadressen mit den Endungen `.m3u8` oder `.mpd` werden akzeptiert. Die Mapper-Funktion sendet keine API-Schlüssel an externe Anbieter.
 
-**Warum keine automatische DaddyLive-HLS-Auflösung?** Der derzeitige öffentliche DaddyLive-Zugriff liefert ein Programm mit Kanal-IDs und HTML-Playerseiten. Die in der APK benötigte Tokenaktualisierung und spezielle Segmententpackung sind Nuvio nicht bekannt. Die Umsetzung einer zuverlässigen und berechtigten Wiedergabe erfordert eine passende direkte Medienquelle bzw. eine vom Anbieter ausdrücklich zugelassene Schnittstelle und einen echten Fire-TV-Test.
+**Warum bleibt ein Teil der DaddyLive-Quellen extern?** Ab 0.4.6 versucht `DADDY_NATIVE_RESOLVE=true` automatisch normale öffentliche HLS-Konfigurationen aufzulösen. Geprüft werden die benannten Playerframes und angebotene Alternativen desselben Kanals, das Manifest und das erste Videosegment. Native Ergebnisse erscheinen zuerst; externe Einträge heißen ausdrücklich „Browser“. Viewer-Tokens, Cookie-Sitzungen, verschlüsselte Playlists und gepackte Segmente werden dabei nicht umgangen oder verarbeitet. Diese Fälle bleiben Browser-Fallbacks. Die Android-App besitzt dafür einen eigenen Transport; eine vollständige native Wiedergabe dieser Quellen ist damit noch nicht umgesetzt.
+
+`/debug/daddy-native/426.json` prüft einen einzelnen Kanal und liefert einen Status ohne Medienadressen oder Header. `/health` nennt Version und aktive Fähigkeiten. Stream-Listen erhalten `Cache-Control: no-store`. `scripts/smoke.mjs` prüft nach einem Push auf `main` die tatsächlich ausgelieferte Version und protokolliert die native Verfügbarkeit eines Beispielkanals. Eine erfolgreiche Manifest-/Segmentprobe bestätigt keine Bild-/Tonwiedergabe auf dem Gerät.
+
+Die Installation in Nuvio benötigt die persönliche URL mit **`/manifest.json`**, nicht `/configure`. Zeigt ein bereits installiertes Addon noch 0.4.5, kann dessen Manifest im Client zwischengespeichert sein; die neue Version zuerst über `/health` und die Manifest-URL prüfen und das Addon bei Bedarf mit derselben Manifest-URL erneut hinzufügen. Persönliche `/u/...`-Adressen können Tokens enthalten und gehören nicht in öffentliche Fehlerberichte.
 
 Offizielle Formatdefinition: [Stremio Stream Object](https://stremio.github.io/stremio-addon-sdk/api/responses/stream.html). Nuvio TV implementiert die Stream-Header im Player und überträgt sie auch bei HLS/DASH-Segmentanforderungen.
 ## Untersuchung nativer Wiedergabe
