@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.2 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.3 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -134,3 +134,16 @@ Unter `/debug/daddy-match/defootball_bl1_<MatchID>.json` werden jetzt zusätzlic
 - `assessment`: `matched`, `fixture_date_not_in_schedule`, `fixture_not_matched_to_schedule` oder `no_football_events`.
 
 Die Diagnose enthält keine API-Schlüssel, persönlichen Manifest-URLs oder Video-Token. Sie macht das Datum explizit sichtbar und vermeidet absichtliches Zuordnen unpassender Spiele. Vor Anpfiff kann eine spätere erneute Abfrage sinnvoll sein.
+
+## Live-Spielplan-Fallback statt alter DaddyLive-JSON-Daten (v0.4.3)
+
+Die auf `thedaddy.pk/schedule/schedule-generated.json` zurückgegebenen 40 Fußballveranstaltungen und 150 Sender stammten vollständig vom **20.03.2025** und waren kein aktueller Live-Spielplan. Eine erfolgreiche HTTP-200-Antwort allein ist daher keine hinreichende Erfolgskontrolle.
+
+- Der Worker verwirft einen Spielplan, wenn dessen neueste Fußballveranstaltung mehr als **7 Tage zurückliegt** (`Stale schedule (YYYY-MM-DD)`).
+- Bei veralteten, fehlenden oder nicht unterstützten JSON-Spielplänen versucht der DaddyLive-Adapter jetzt zusätzlich, die aktuelle öffentliche Homepage `https://thedaddy.pk/` als HTML abzurufen und dort `.schedule__day`, `.schedule__category` und `.schedule__event` auszulesen.
+- Der HTML-Parser übernimmt Datum, Uhrzeit, Fußballkategorie, Veranstaltungstitel und öffentlich verlinkte numerische Kanal-IDs; andere Sportarten, HTML-Player-Skripte und Video-/Entschlüsselungstokens werden nicht extrahiert.
+- Auch Datumskürzel wie `04th Nov 2026` werden unterstützt. Es handelt sich beim Quellformat um `UK GMT`; unklare Zeitangaben werden nicht erfunden.
+- `/debug/sources.json` nennt bei Erfolg die neue Quelle `DaddyLive aktuelle Webseite`. Bei Misserfolg werden die Fehler der JSON-Quellen und des HTML-Fallbacks getrennt ausgewiesen. `/debug/daddy-match/...` zeigt weiterhin die konkrete Spielzuordnung.
+- Der HTML-Aufbau der Webseite kann sich ändern und Zugriffe aus Cloudflare können blockiert sein. Diese Fälle werden ausdrücklich als nicht erreichbar gemeldet; ein erfolgreicher Live-Abruf oder nativer HLS-Stream ist noch **nicht** bestätigt.
+
+Referenz für die DOM-Struktur: [DaddyLiveProvider.js im Open-Source-Projekt Nuvio Live Sports](https://github.com/rajhodedara/live-sport-plugin/blob/main/src/providers/DaddyLiveProvider.js).
