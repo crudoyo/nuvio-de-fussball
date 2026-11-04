@@ -76,8 +76,6 @@ export function nativeMappedStreams(game,events,matchScore,env={}){
   let conf;
   try{conf=JSON.parse(raw);}catch{return [];}
   if(!conf||typeof conf!=='object'||Array.isArray(conf))return [];
-  const score=(awaitMatch)=>awaitMatch; // no async fetch: deterministic match only
-  void score;
   const matches=events.map(e=>({...e,score:matchScore(game,{name:e.name,startTime:e.startTime})}))
     .filter(e=>e.score>=12&&Math.abs(Date.parse(e.startTime)-Date.parse(game.matchDateTimeUTC))<=8*3600000)
     .sort((a,b)=>b.score-a.score).slice(0,3);
