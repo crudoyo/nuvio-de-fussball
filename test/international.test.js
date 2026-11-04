@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {espnScoreboardUrl, normalizeEspnEvents} from '../src/international.js';
-import {badgeData, makeMatchPoster} from '../src/graphics.js';
+import {badgeData, badgeImageUrl, makeMatchPoster} from '../src/graphics.js';
 import {handle, resolveStreams} from '../src/worker.js';
 
 const soon = new Date(Date.now()+2*86400000);
@@ -82,4 +82,47 @@ test('public Sports Streams plus configured sports manifest can be bridged witho
   assert.equal(result.length,1); // identical stream URLs from multiple providers are deduplicated
   assert(result.every(s=>s.url.startsWith('https:')));
   assert(result.every(s=>!s.infoHash));
+});
+
+
+test('raw Wikimedia SVG club crests are converted into embeddable 240px PNG thumbnails',async()=>{
+  const original='https://upload.wikimedia.org/wikipedia/commons/6/67/Borussia_Dortmund_logo.svg';
+  const thumbnail=badgeImageUrl(original);
+  assert.equal(thumbnail,
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/Borussia_Dortmund_logo.svg/240px-Borussia_Dortmund_logo.svg.png');
+  assert.equal(badgeImageUrl(
+    'https://upload.wikimedia.org/wikipedia/en/thumb/0/04/RB_Leipzig_2014_logo.svg/800px-RB_Leipzig_2014_logo.svg.png'
+  ),'https://upload.wikimedia.org/wikipedia/en/thumb/0/04/RB_Leipzig_2014_logo.svg/240px-RB_Leipzig_2014_logo.svg.png');
+  const img=Uint8Array.from([137,80,78,71,13,10,26,10]);
+  const called=[];
+  const fetcher=async (url,options)=>{
+    called.push(String(url));
+    assert.equal(options.redirect,'manual');
+    return new Response(img,{headers:{'content-type':'image/png'}});
+  };
+  const output=await badgeData(original,fetcher);
+  assert(output.startsWith('data:image/png;base64,'));
+  assert.deepEqual(called,[thumbnail]);
+});
+test('badge fetch follows only same-host redirects, keeping fallback on cross-host redirects',async()=>{
+  const img=Uint8Array.from([137,80,78,71,13,10,26,10]);
+  const source='https://assets.example.com/team-green.png';
+  const seen=[];
+  const data=await badgeData(source, async (url,options)=>{
+    seen.push(String(url));
+    assert.equal(options.redirect,'manual');
+    if(seen.length===1)return new Response(null,{
+      status:302,headers:{location:'/logos/team-green-final.png'}
+    });
+    return new Response(img,{headers:{'content-type':'image/png'}});
+  });
+  assert(data.startsWith('data:image/png;base64,'));
+  assert.deepEqual(seen,[source,'https://assets.example.com/logos/team-green-final.png']);
+  let requests=0;
+  const blocked=await badgeData('https://assets.example.com/team-crossdomain.png',async()=>{
+    requests++;
+    return new Response(null,{status:302,headers:{location:'https://other.example.com/image.png'}});
+  });
+  assert.equal(blocked,null);
+  assert.equal(requests,1);
 });
