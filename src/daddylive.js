@@ -10,6 +10,8 @@
  */
 export const DADDY_PUBLIC_SCHEDULE =
   'https://dlstreams.st/schedule/schedule-generated.json';
+export const DADDY_CURRENT_SCHEDULE =
+  'https://thedaddy.pk/schedule/schedule-generated.json';
 export const DADDY_API_BASE = 'https://thedaddy.pk/daddyapi.php';
 export const DADDY_PLAYER_BASE = 'https://thedaddy.pk/stream/stream-';
 const MAX_BODY_BYTES = 8_000_000;
@@ -97,22 +99,52 @@ function apiUrl(apiKey) {
   base.searchParams.set('endpoint','schedule');
   return base.toString();
 }
-async function downloadSchedule(url, fetcher) {
-  const response=await fetcher(url,{
-    headers:{accept:'application/json'},
-    redirect:'manual',
-    signal:AbortSignal.timeout(8500)
-  });
-  if(!response.ok)throw new Error('HTTP '+response.status);
-  const length=Number(response.headers.get('content-length')||0);
-  if(length>MAX_BODY_BYTES)throw new Error('Payload too large');
-  const raw=await response.text();
-  if(raw.length>MAX_BODY_BYTES)throw new Error('Payload too large');
-  let payload;
-  try {payload=JSON.parse(raw);}catch{throw new Error('Invalid JSON');}
-  if(payload?.success===false)throw new Error('API denied request');
-  if(!payload || typeof payload !== 'object')throw new Error('Invalid schema');
-  return parseDaddySchedule(payload);
+function safeScheduleRedirect(raw, base) {
+  try {
+    const u=new URL(raw,base);
+    // Only the known provider hosts and the exact schedule path are permitted.
+    // Never forward an API key, authentication URL, cookies or caller headers.
+    if (u.protocol !== 'https:' || u.username || u.password || u.port ||
+        !['dlstreams.st','thedaddy.pk','www.thedaddy.pk'].includes(u.hostname))
+      return null;
+    if (!/^\/schedule\/schedule-generated\.json$/.test(u.pathname) ||
+        u.search || u.hash) return null;
+    return u.href;
+  } catch {return null;}
+}
+async function downloadSchedule(url, fetcher, protectedApi=false) {
+  let current=url;
+  for (let redirects=0; redirects<=3; redirects++) {
+    const response=await fetcher(current,{
+      headers:{accept:'application/json'},
+      redirect:'manual',
+      signal:AbortSignal.timeout(8500)
+    });
+    if (response.status>=300 && response.status<400) {
+      if (protectedApi) throw new Error('Protected API redirect blocked');
+      const location=response.headers.get('location');
+      if(!location)throw new Error('HTTP '+response.status+' (no Location)');
+      const destination=safeScheduleRedirect(location,current);
+      if(!destination)throw new Error('Public schedule redirected away from JSON');
+      if(destination===current)throw new Error('Redirect loop');
+      current=destination;
+      continue;
+    }
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    const length=Number(response.headers.get('content-length')||0);
+    if(length>MAX_BODY_BYTES)throw new Error('Payload too large');
+    const contentType=String(response.headers.get('content-type')||'').toLowerCase();
+    if(contentType.includes('text/html'))throw new Error('Website HTML instead of schedule JSON');
+    const raw=await response.text();
+    if(raw.length>MAX_BODY_BYTES)throw new Error('Payload too large');
+    let payload;
+    try {payload=JSON.parse(raw);}catch{throw new Error('Invalid JSON');}
+    if(payload?.success===false)throw new Error('API denied request');
+    if(!payload || typeof payload!=='object' || Array.isArray(payload))
+      throw new Error('Invalid schema');
+    return parseDaddySchedule(payload);
+  }
+  throw new Error('Too many redirects');
 }
 /**
  * Does not expose the API key or full remote URLs in diagnostics.
@@ -131,12 +163,13 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
   const pending=(async()=>{
     const attempts=[];
     const candidates=[
-      ...(key?[{name:'DaddyLive API (Schlüssel)',url:apiUrl(key)}]:[]),
-      {name:'DaddyLive öffentlicher Spielplan',url:DADDY_PUBLIC_SCHEDULE}
+      ...(key?[{name:'DaddyLive API (Schlüssel)',url:apiUrl(key),protectedApi:true}]:[]),
+      {name:'DaddyLive aktueller JSON-Pfad',url:DADDY_CURRENT_SCHEDULE},
+      {name:'DaddyLive früherer JSON-Pfad',url:DADDY_PUBLIC_SCHEDULE}
     ];
     for(const source of candidates){
       try{
-        const events=await downloadSchedule(source.url,fetcher);
+        const events=await downloadSchedule(source.url,fetcher,Boolean(source.protectedApi));
         const result={reachable:true,source:source.name,events,attempts,
           footballEvents:events.length,channelCount:
             new Set(events.flatMap(x=>x.channels.map(c=>c.id))).size};
@@ -144,10 +177,14 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
         return result;
       }catch(e){
         const msg=String(e?.message||'request failed');
+        const allowedReasons=new Set([
+          'Invalid JSON','Invalid schema','API denied request','Payload too large',
+          'Protected API redirect blocked','Public schedule redirected away from JSON',
+          'Website HTML instead of schedule JSON','Too many redirects','Redirect loop'
+        ]);
         attempts.push({source:source.name,
-          reason:/^HTTP \d{3}$/.test(msg)?msg:msg==='Invalid JSON'?'Invalid JSON':
-            msg==='Invalid schema'?'Invalid schema':msg==='API denied request'?'API denied request':
-            msg==='Payload too large'?'Payload too large':'Not reachable'});
+          reason:/^HTTP \d{3}(?: \(no Location\))?$/.test(msg)?msg:
+            allowedReasons.has(msg)?msg:'Not reachable'});
       }
     }
     const result={reachable:false,source:null,events:[],attempts,
