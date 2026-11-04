@@ -121,8 +121,11 @@ async function downloadSchedule(url, fetcher) {
  */
 export async function getDaddySchedule(env={},fetcher=fetch) {
   const key=String(env.DADDY_API_KEY||'').trim();
-  const cacheKey=key?'protected':'public';
-  const old=cache.get(cacheKey);
+  // Keep mocked fetchers uncached so tests and diagnostics remain independent.
+  // API keys stay only in memory and are never included in response data.
+  const cacheKey=key?'protected:'+key:'public';
+  const useCache=fetcher===fetch;
+  const old=useCache?cache.get(cacheKey):null;
   if(old && old.expires>Date.now())return old.result;
   if(old?.pending)return old.pending;
   const pending=(async()=>{
@@ -137,7 +140,7 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
         const result={reachable:true,source:source.name,events,attempts,
           footballEvents:events.length,channelCount:
             new Set(events.flatMap(x=>x.channels.map(c=>c.id))).size};
-        cache.set(cacheKey,{result,expires:Date.now()+CACHE_MS});
+        if(useCache)cache.set(cacheKey,{result,expires:Date.now()+CACHE_MS});
         return result;
       }catch(e){
         const msg=String(e?.message||'request failed');
@@ -149,10 +152,10 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
     }
     const result={reachable:false,source:null,events:[],attempts,
       footballEvents:0,channelCount:0};
-    cache.set(cacheKey,{result,expires:Date.now()+FAILED_CACHE_MS});
+    if(useCache)cache.set(cacheKey,{result,expires:Date.now()+FAILED_CACHE_MS});
     return result;
   })();
-  cache.set(cacheKey,{pending,expires:0});
+  if(useCache)cache.set(cacheKey,{pending,expires:0});
   return pending;
 }
 export function matchDaddyEvents(game,events,matchScore) {
