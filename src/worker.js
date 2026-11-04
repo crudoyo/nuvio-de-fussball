@@ -276,7 +276,7 @@ export async function handle(request,env={},fetcher=fetch) {
       const away=clean(url.searchParams.get('away')).slice(0,90);
       const kickoff=clean(url.searchParams.get('kickoff'));
       const parsed=Date.parse(kickoff);
-      if(!home||!away||home===away||!/^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z$/.test(kickoff)
+      if(!home||!away||home===away||!/^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?Z$/.test(kickoff)
         ||!Number.isFinite(parsed))
         return json({error:'home, away und kickoff (UTC, ISO-8601) erforderlich'},400,0);
       const fixture={
