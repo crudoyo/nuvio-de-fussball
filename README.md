@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.1 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -108,3 +108,15 @@ Der Worker liest unabhängig von den blockierten Sport-Add-ons einen öffentlich
 - `/debug/daddy-match/defootball_bl1_<MatchID>.json` zeigt für eine konkrete Begegnung die zugeordneten Veranstaltungen und Sender ohne Playlist-Tokens.
 
 **Grenze:** Der externe Player besteht aus HTML, nicht aus einer für Nuvio nativ abspielbaren Mediendatei. Die komplexe Entschlüsselung kurzlebiger, geschützter Video-URLs aus dem Referenzprojekt wird nicht übernommen. Nur mit entsprechenden Wiedergaberechten verwenden.
+
+## Diagnostik nach Umzug von dlstreams.st (v0.4.1)
+
+Die öffentlich verwendete frühere Spielplanadresse `dlstreams.st/schedule/schedule-generated.json` antwortet inzwischen mit HTTP 301. Externe Domainbeobachtung sieht eine Weiterleitung auf `thedaddy.pk`. Die offizielle dokumentierte Schedule-API unter `thedaddy.pk/daddyapi.php?endpoint=schedule` benötigt einen Schlüssel.
+
+- Der direkte Adapter prüft zuerst `https://thedaddy.pk/schedule/schedule-generated.json`, danach die frühere `dlstreams.st`-Adresse.
+- Weiterleitungen werden nur akzeptiert, wenn sie zu derselben JSON-Spielplanroute unter `dlstreams.st` oder `thedaddy.pk` führen. Umleitungen auf die Homepage, ungesicherte URLs oder andere Domains sind kein verwertbarer JSON-Spielplan und werden blockiert.
+- Ein optionaler API-Schlüssel in `DADDY_API_KEY` wird bei Weiterleitungen **niemals weitergegeben**.
+- `/debug/sources.json` unterscheidet jetzt `HTTP 301`, nicht verfügbare JSON-Endpunkte, Homepage-Weiterleitungen und HTML-/JSON-Fehler. Gibt keiner der öffentlichen Pfade einen Spielplan zurück, werden trotz laufendem Worker keine DaddyLive-Kanäle angezeigt.
+- Ist der öffentliche Spielplan nicht mehr verfügbar, kann ein gültiger, vom Anbieter ausgegebener API-Schlüssel als Cloudflare-Worker-Secret hinterlegt werden. Die Verfügbarkeit wurde nicht live bestätigt.
+
+Es werden weder geschützte Stream-Tokens entschlüsselt noch IP-, Login- oder DRM-Sperren umgangen.
