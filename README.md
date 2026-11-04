@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.1 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.2 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -120,3 +120,17 @@ Die öffentlich verwendete frühere Spielplanadresse `dlstreams.st/schedule/sche
 - Ist der öffentliche Spielplan nicht mehr verfügbar, kann ein gültiger, vom Anbieter ausgegebener API-Schlüssel als Cloudflare-Worker-Secret hinterlegt werden. Die Verfügbarkeit wurde nicht live bestätigt.
 
 Es werden weder geschützte Stream-Tokens entschlüsselt noch IP-, Login- oder DRM-Sperren umgangen.
+
+## Spielbezogene DaddyLive-Diagnose (v0.4.2)
+
+Der direkte Spielplan ist erreichbar, aber eine bestimmte Begegnung wird nicht immer gefunden. Vor allem mehrere Tage vor dem Anstoß kann die Partie noch im DaddyLive-Spielplan fehlen.
+
+Unter `/debug/daddy-match/defootball_bl1_<MatchID>.json` werden jetzt zusätzlich **matchDiagnosis**-Daten ausgegeben:
+
+- `fixture`: offizielle Mannschaftsnamen und Anstoßzeit (UTC) aus OpenLigaDB.
+- `scheduleCoverage`: der tatsächlich von DaddyLive abgedeckte Zeitraum und die verfügbaren UTC-Tage.
+- `eventsOnFixtureDate` und `sampleSameDayEvents`: wie viele DaddyLive-Fußballveranstaltungen am Spieltag geführt werden, sowie einige Veranstaltungstitel und Zeiten.
+- `nearestEvents`: falls der Spieltag gar nicht abgedeckt ist, einige zeitlich benachbarte Veranstaltungen.
+- `assessment`: `matched`, `fixture_date_not_in_schedule`, `fixture_not_matched_to_schedule` oder `no_football_events`.
+
+Die Diagnose enthält keine API-Schlüssel, persönlichen Manifest-URLs oder Video-Token. Sie macht das Datum explizit sichtbar und vermeidet absichtliches Zuordnen unpassender Spiele. Vor Anpfiff kann eine spätere erneute Abfrage sinnvoll sein.
