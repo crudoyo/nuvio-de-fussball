@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.3 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.4 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -147,3 +147,10 @@ Die auf `thedaddy.pk/schedule/schedule-generated.json` zurückgegebenen 40 Fußb
 - Der HTML-Aufbau der Webseite kann sich ändern und Zugriffe aus Cloudflare können blockiert sein. Diese Fälle werden ausdrücklich als nicht erreichbar gemeldet; ein erfolgreicher Live-Abruf oder nativer HLS-Stream ist noch **nicht** bestätigt.
 
 Referenz für die DOM-Struktur: [DaddyLiveProvider.js im Open-Source-Projekt Nuvio Live Sports](https://github.com/rajhodedara/live-sport-plugin/blob/main/src/providers/DaddyLiveProvider.js).
+
+## Direkter DaddyLive-Spieltest (v0.4.4)
+
+- Der Diagnoselink `/debug/daddy-lookup.json?home=Borussia%20Dortmund&away=Real%20Betis&kickoff=2026-11-04T20%3A00%3A00Z` prüft unabhängig von der OpenLigaDB-Spiel-ID, ob die aktuell abrufbaren DaddyLive-Fußballveranstaltungen die konkrete Partie enthalten. Das Beispiel für den 4. November 2026 ist nach dem Spieltag nur noch ein historischer Testfall.
+- Das JSON enthält den zugeordneten Veranstaltungstitel, Anstoßzeit, Sendernamen und -IDs sowie den Grund, falls die Paarung nicht erkannt wurde. Zugangstoken oder abspielbare Mediendateien sind darin nicht enthalten.
+- Alte einzelne Ausreißer im ansonsten aktuellen DaddyLive-Spielplan (beispielsweise April 2026) werden verworfen, wenn sie älter als sieben Tage sind. Vollständig veraltete Spielpläne werden wie bisher abgelehnt und die nächstmögliche Datenquelle versucht.
+- Ist die Veranstaltung über die direkte Diagnose auffindbar, aber nicht im Nuvio-Katalog, wird als Nächstes die OpenLigaDB-Katalog-ID beziehungsweise die Zuordnung der Mannschaftsnamen geprüft. Sind Sender sichtbar, ist damit **noch keine** erfolgreiche Videowiedergabe bestätigt.
