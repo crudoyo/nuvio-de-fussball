@@ -10,7 +10,7 @@ import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
   diagnoseDaddyFixture
 } from './daddylive.js';
-export const VERSION = '0.4.2';
+export const VERSION = '0.4.3';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
