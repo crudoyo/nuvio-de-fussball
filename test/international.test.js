@@ -61,7 +61,7 @@ test('embedded club badge images and fallback abbreviations render in SVG cards'
   assert.equal(await badgeData('http://localhost/private.png',image),null);
 });
 test('public Sports Streams plus configured sports manifest can be bridged without torrents',async()=>{
-  const source='https://sports.highfly.dev/manifest.json';
+  const source='https://sports.highfly.to/manifest.json';
   const personal='https://personal.example/manifest.json';
   const sources=[source,personal];
   const fetcher=async url=>{
