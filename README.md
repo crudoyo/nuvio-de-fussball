@@ -184,3 +184,10 @@ Dies ist nur ein **Formatbeispiel**, keine abspielbare URL. Ohne konfigurierte Q
 **Warum keine automatische DaddyLive-HLS-Auflösung?** Der derzeitige öffentliche DaddyLive-Zugriff liefert ein Programm mit Kanal-IDs und HTML-Playerseiten. Die in der APK benötigte Tokenaktualisierung und spezielle Segmententpackung sind Nuvio nicht bekannt. Die Umsetzung einer zuverlässigen und berechtigten Wiedergabe erfordert eine passende direkte Medienquelle bzw. eine vom Anbieter ausdrücklich zugelassene Schnittstelle und einen echten Fire-TV-Test.
 
 Offizielle Formatdefinition: [Stremio Stream Object](https://stremio.github.io/stremio-addon-sdk/api/responses/stream.html). Nuvio TV implementiert die Stream-Header im Player und überträgt sie auch bei HLS/DASH-Segmentanforderungen.
+## Untersuchung nativer Wiedergabe
+
+Die [technische Analyse und Grenzen](docs/native-playback.md) beschreibt die
+Android-Wiedergabekette und NuvioTV-Schnittstelle. Optional aktiviert
+`NATIVE_VERIFY_MANIFESTS="true"` eine begrenzte Inhaltsprüfung selbst
+konfigurierter öffentlicher HLS-/DASH-Einstiegsmanifeste. Dies ist kein
+automatischer DaddyLive-Resolver und kein Nachweis erfolgreicher Wiedergabe.
