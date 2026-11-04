@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseUkScheduleDate,parseDaddySchedule,daddyPlayerUrl,getDaddySchedule,
-  matchDaddyEvents,externalDaddyPlayers,daddyPublicDiagnostic
+  matchDaddyEvents,externalDaddyPlayers,daddyPublicDiagnostic,diagnoseDaddyFixture
 } from '../src/daddylive.js';
 import {handle,matchScore} from '../src/worker.js';
 
@@ -165,4 +165,35 @@ test('public JSON error documents are not misclassified as successful schedules'
   const result=await getDaddySchedule({},async()=>asJson({error:'not found'}));
   assert.equal(result.reachable,false);
   assert(result.attempts.every(x=>x.reason==='Invalid schema'));
+});
+
+test('unmatched future game explains dates covered by DaddyLive schedule',()=>{
+  const earlySchedule={'Wednesday 4th November 2026 - Schedule Time UK GMT':{
+    Soccer:[{time:'20:00',event:'Bayern vs Hamburg',channels:[{channel_id:'39'}]}]
+  }};
+  const events=parseDaddySchedule(earlySchedule);
+  const report=diagnoseDaddyFixture(fixture,events,matchScore);
+  assert.equal(report.assessment,'fixture_date_not_in_schedule');
+  assert.equal(report.fixture.kickoffUTC,'2026-11-07T14:30:00.000Z');
+  assert.equal(report.scheduleCoverage.totalFootballEvents,1);
+  assert.equal(report.eventsOnFixtureDate,0);
+  assert.deepEqual(report.scheduleCoverage.datesUTC,['2026-11-04']);
+  assert.equal(report.nearestEvents[0].name,'Bayern vs Hamburg');
+});
+test('fixture date present but title mismatched is distinguished from missing date',()=>{
+  const events=parseDaddySchedule(schedule);
+  const other={...fixture,team1:{teamName:'FC Bayern München'},
+    team2:{teamName:'Hamburger SV'}};
+  const report=diagnoseDaddyFixture(other,events,matchScore);
+  assert.equal(report.assessment,'fixture_not_matched_to_schedule');
+  assert.equal(report.eventsOnFixtureDate,2);
+  assert.equal(report.sampleSameDayEvents.length,2);
+  assert.equal(report.nearestEvents.length,0);
+});
+test('exact DaddyLive match diagnoses as matched without exposing stream URLs',()=>{
+  const events=parseDaddySchedule(schedule);
+  const report=diagnoseDaddyFixture(fixture,events,matchScore);
+  assert.equal(report.assessment,'matched');
+  assert.equal(report.eventsOnFixtureDate,2);
+  assert(!JSON.stringify(report).includes('/stream/stream-'));
 });
