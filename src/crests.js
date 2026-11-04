@@ -16,7 +16,7 @@ const fallbackNames={
  'fc bayern munchen':['bayern munich','bayern munchen'],
  'borussia monchengladbach':['borussia m gladbach','gladbach'],
  'rb leipzig':['leipzig'],
- 'sv 07 elversberg':['elversberg'],
+ 'sv 07 elversberg':['sv elversberg','elversberg'],
  'hamburger sv':['hamburg','hamburger sv'],
  'rot weiss essen':['rw essen','rwe','essen'],
  'spvgg greuther furth':['greuther furth','furth'],
