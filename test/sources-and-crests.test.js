@@ -48,7 +48,7 @@ test('providers diagnostic does not display personal URL or token and flags cata
     return new Response('offline',{status:503});
   };
   const result=await diagnoseSources([personal],fetcher);
-  assert(result.some(x=>x.name==='Sports Streams'&&x.sportsCatalogs===1));
+  assert(result.some(x=>x.name==='Sports Streams (Hauptserver)'&&x.sportsCatalogs===1));
   assert(result.some(x=>x.name==='PenguPlay'&&x.catalogCount===0));
   assert(result.some(x=>x.name==='Nuvio Live Sports'&&x.reason==='HTTP 503'));
   assert(!JSON.stringify(result).includes('token-sensitive-private'));
