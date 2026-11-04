@@ -113,8 +113,14 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
   const queue=[{url:start,referer:'https://thedaddy.pk/'}],seen=new Set();let status='no_public_media';
   const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
   try{
-    for(let count=0;queue.length&&count<6;count++){
+    for(let count=0;queue.length&&count<8;){
       const page=queue.shift();if(seen.has(page.url))continue;seen.add(page.url);
+      // Known custom transports cannot yield a direct stream here. Do not
+      // spend the page budget fetching them ahead of offered standard players.
+      if(SPECIAL.has(new URL(page.url).hostname)){
+        status='provider_transport_required';checks.providerTransportPages++;continue;
+      }
+      count++;
       checks.pages++;
       const response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,controller.signal,false,true);
       page.url=response.url;
@@ -138,12 +144,12 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
       // The provider identifies its content iframe explicitly. Ignore ad frames.
       for(const tag of html.matchAll(/<iframe\b[^>]*>/gi)){
         const a=attributes(tag[0]);if(!['thatframe','playerFrame'].includes(a.id))continue;
-        const url=player(a.src,page.url);if(url&&!seen.has(url)){checks.contentFrames++;queue.unshift({url,referer:page.url});}
+        const url=player(a.src,page.url);if(url&&!seen.has(url)&&queue.length<12){checks.contentFrames++;queue.unshift({url,referer:page.url});}
       }
       // Only offered same-channel alternatives; never manufacture media addresses.
       for(const tag of html.matchAll(/<(?:button|a)\b[^>]*\bdata-url\s*=[^>]*>/gi)){
         const a=attributes(tag[0]),url=player(a['data-url'],page.url);
-        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player)/stream-'+channelId+'\\.php$'))&&!seen.has(url)){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
+        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player)/stream-'+channelId+'\\.php$'))&&!seen.has(url)&&queue.length<12){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
       }
       // Current Android catalogue uses this public channel-selection page.
       // Read its offered buttons too; the legacy stream page may omit them.

@@ -5,7 +5,7 @@
 Die nachfolgende ursprüngliche Analyse beschreibt die Grenze des Android-
 Spezialtransports. 0.4.6 ergänzt einen begrenzten automatischen Resolver für
 gewöhnliches öffentliches HLS: benannte Playerframes und angebotene Alternativen
-desselben Kanals, feste Player-Hostliste, maximal sechs Playerseiten mit jeweils
+desselben Kanals, feste Player-Hostliste, maximal acht Playerseiten mit jeweils
 höchstens zwei geprüften Redirects, drei Playlist-Ebenen, sechs Sekunden Gesamt-
 zeit und begrenzte Antwortgrößen. Maximal zwei passende Sender werden pro
 Stream-Anfrage geprüft. Es wird kein JavaScript ausgeführt; lediglich literale

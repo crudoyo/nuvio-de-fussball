@@ -13,7 +13,7 @@ import {
 import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.8';
+export const VERSION = '0.4.9';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
