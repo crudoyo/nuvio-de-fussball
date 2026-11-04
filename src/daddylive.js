@@ -142,6 +142,11 @@ async function downloadSchedule(url, fetcher, protectedApi=false) {
     if(payload?.success===false)throw new Error('API denied request');
     if(!payload || typeof payload!=='object' || Array.isArray(payload))
       throw new Error('Invalid schema');
+    const schedule=payload.data&&typeof payload.data==='object'&&!Array.isArray(payload.data)
+      ? payload.data : payload;
+    // A generic JSON error/landing response must never count as a working schedule.
+    if(!Object.keys(schedule).some(k=>/\b20\d{2}\b/.test(k)))
+      throw new Error('Invalid schema');
     return parseDaddySchedule(payload);
   }
   throw new Error('Too many redirects');
