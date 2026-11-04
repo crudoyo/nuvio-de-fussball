@@ -28,6 +28,7 @@ test('reads literal media and explicit Base64 data expressions without executing
   assert.equal(literalMedia('file:"https:\\/\\/cdn.example.org/live.m3u8"'),media);
   const encoded=btoa(media);
   assert.equal(literalMedia(`const a='${encoded}';const video=atob(a);source:{src:video,type:'hls'}`),media);
+  assert.equal(literalMedia(`function decode(v){return atob(v);}const a='${encoded}';const video=decode(a);source:{src:video,type:'hls'}`),media);
   assert.equal(literalMedia(`const a='${encoded}';const video=evil(a);source:{src:video,type:'hls'}`),null);
   for(const url of [media+'?token=private',media+'?t=private','https://localhost/a.m3u8','https://thedaddy.pk/player.php'])
     assert.equal(literalMedia('const SRC="'+url+'";'),null);
@@ -60,17 +61,27 @@ test('provider transport requirements never trigger a playlist-token request',as
   assert.equal(result.status,'provider_transport_required');assert.equal(result.stream,null);
   assert.equal(seen.length,3);assert(seen.every(u=>!u.includes('playlist-token')));
 });
-test('refuses denied access, redirects and cookie sessions without forwarding credentials',async()=>{
+test('refuses denied access and unsafe redirects without forwarding credentials',async()=>{
   for(const [response,status] of [
     [new Response('',{status:403}),'access_denied'],
-    [new Response('',{status:302,headers:{location:'https://unknown.example.org/'}}),'redirect_not_supported'],
-    [new Response('',{headers:{'set-cookie':'session=private'}}),'session_required']
+    [new Response('',{status:302,headers:{location:'https://unknown.example.org/'}}),'redirect_not_supported']
   ]){
     let requests=0;
     const result=await resolveDaddyChannel('426',async()=>{requests++;return response;});
     assert.equal(result.status,status);assert.equal(requests,1);
     assert(!JSON.stringify(result).includes('private'));
   }
+});
+test('ignores optional cookies but never sends them or works around denied media access',async()=>{
+  const base=network({'https://thedaddy.pk/stream/stream-426.php':()=>new Response('const SRC="'+media+'";',
+    {headers:{'set-cookie':'tracking=private'}})});
+  const cookieFree=async(url,options)=>{
+    assert(!Object.keys(options.headers).some(k=>/cookie|authorization/i.test(k)));
+    return base(url,options);
+  };
+  assert.equal((await resolveDaddyChannel('426',cookieFree)).status,'resolved');
+  const denied=async(url,options)=>url===media?new Response('',{status:403}):cookieFree(url,options);
+  assert.equal((await resolveDaddyChannel('426',denied)).status,'access_denied');
 });
 test('does not advertise HTML, packed segments, encrypted playlists or DASH as automatic native HLS',async()=>{
   for(const [url,body,status] of [

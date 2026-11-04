@@ -32,14 +32,16 @@ export function literalMedia(html){
   const usage=/source\s*:\s*\{\s*src\s*:\s*([\w$]+)\s*[,}]/.exec(source);
   if(!usage)return null;
   const values=new Map([...source.matchAll(/\b(?:var|let|const)\s+([\w$]+)\s*=\s*["']([A-Za-z0-9+/=_-]{1,8192})["']/g)].map(m=>[m[1],m[2]]));
+  const decoders=new Set(['atob']);
+  for(const wrapper of source.matchAll(/\bfunction\s+([\w$]+)\s*\(\s*([\w$]+)\s*\)\s*\{\s*return\s+atob\(\s*\2\s*\)\s*;?\s*\}/g))decoders.add(wrapper[1]);
   for(const assignment of source.matchAll(/\b(?:var|let|const)\s+([\w$]+)\s*=\s*([^;]{1,16000});/g)){
     if(assignment[1]!==usage[1])continue;
     const parts=assignment[2].split('+');if(parts.length>24)return null;
     try{
       const url=parts.map(part=>{
-        const call=/^\s*atob\(\s*([\w$]+)\s*\)\s*$/.exec(part);
-        if(!call||!values.has(call[1]))throw new Error();
-        return atob(values.get(call[1]).replace(/-/g,'+').replace(/_/g,'/'));
+        const call=/^\s*([\w$]+)\(\s*([\w$]+)\s*\)\s*$/.exec(part);
+        if(!call||!decoders.has(call[1])||!values.has(call[2]))throw new Error();
+        return atob(values.get(call[2]).replace(/-/g,'+').replace(/_/g,'/'));
       }).join('');
       return url.length<=2048&&resource(url)&&publicMediaUrl(url)?url:null;
     }catch{return null;}
@@ -76,7 +78,8 @@ async function get(url,headers,fetcher,signal,segment=false,page=false){
     fail(response.status===401||response.status===403?'access_denied':
       response.status>=300&&response.status<400?'redirect_not_supported':'upstream_http_error');
   }
-  if(response.headers.has('set-cookie')){await response.body?.cancel().catch(()=>{});fail('session_required');}
+  // Ignore optional response cookies. They do not prove session dependence.
+  // Subsequent requests remain cookie-free; 401/403 is still a hard stop.
   // Current player pages embed large channel lists. Match the Android page
   // budget while keeping manifests and media-prefix probes much smaller.
   const bytes=await read(response,page?4*1024*1024:segment?4096:256*1024,segment);
