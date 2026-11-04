@@ -6,7 +6,10 @@
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
 import { espnTeamsUrl, attachFallbackCrests } from './crests.js';
-export const VERSION = '0.3.3';
+import {
+  getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic
+} from './daddylive.js';
+export const VERSION = '0.4.0';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -177,10 +180,10 @@ function isDirect(s){
   if (!s || typeof s !== 'object' || s.infoHash || s.fileIdx!==undefined || s.sources?.length)return false;
   return ['url','externalUrl'].some(k=>{try{const u=new URL(s[k]);return ['https:','http:'].includes(u.protocol);}catch{return false;}});
 }
-export async function resolveStreams(game, sources, fetcher=fetch) {
+export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
   // Independent providers are queried concurrently so an unavailable one
   // does not block the user's other stream options.
-  const all=await Promise.allSettled(streamSources(sources).map(async source=>{
+  const addonTask=Promise.allSettled(streamSources(sources).map(async source=>{
     const streams=[];
     const addon=await loadJSON(source,3600,fetcher);
     const catalogs=(addon.catalogs||[])
@@ -205,12 +208,21 @@ export async function resolveStreams(game, sources, fetcher=fetch) {
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;
   }));
+  const [all,daddy] = await Promise.all([
+    addonTask,
+    getDaddySchedule(env,fetcher)
+  ]);
   const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
-  return [...new Map(found.map(s=>[s.url||s.externalUrl,s])).values()];
+  // Only the documented public HTML player URL is exposed; this is NOT an
+  // HLS extractor. Opt-in when the operator has permission to open these players.
+  const players=String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
+    ? externalDaddyPlayers(game,daddy.events,matchScore)
+    : [];
+  return [...new Map([...found,...players].map(s=>[s.url||s.externalUrl,s])).values()];
 }
-export async function diagnoseSources(personal=[], fetcher=fetch) {
+export async function diagnoseSources(personal=[], fetcher=fetch, env={}) {
   const all=streamSources(personal);
-  return Promise.all(all.map(async (url,i)=>{
+  const providerStatuses=await Promise.all(all.map(async (url,i)=>{
     const id=url.includes('sports.highfly.to')?'Sports Streams (Hauptserver)':
       url.includes('sportsfree.highfly.to')?'Sports Streams (Mirror 1)':
       url.includes('sportsfree-us2.highfly.to')?'Sports Streams (Mirror 2)':
@@ -230,9 +242,14 @@ export async function diagnoseSources(personal=[], fetcher=fetch) {
       return {name:id,reachable:false,reason:status?'HTTP '+status[1]:'Not reachable'};
     }
   }));
+  const daddy=await getDaddySchedule(env,fetcher);
+  return [...providerStatuses,{
+    ...daddyPublicDiagnostic(daddy),
+    playerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
+  }];
 }
 const CSS=`<style>body{margin:0;background:#0e1825;color:#f2f7fb;font:16px system-ui,sans-serif;line-height:1.6}main{max-width:760px;margin:42px auto;padding:0 20px}.panel{background:#16283a;border:1px solid #30465a;padding:20px;border-radius:14px;margin:20px 0}h1{font-size:28px}p,li{color:#c4d3dd}a{color:#9be2c9}textarea,input{box-sizing:border-box;width:100%;background:#081726;color:#fff;border:1px solid #52677b;border-radius:8px;padding:12px;font:inherit}button{background:#8ee0bc;color:#082019;padding:12px 17px;border:0;border-radius:8px;font-weight:bold;cursor:pointer}small{color:#9daebd}</style>`;
-const page=()=>`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio Fußball</title>${CSS}<main><h1>⚽ Deutscher Fußball für Nuvio</h1><p>Je Liga und Pokalwettbewerb ein Katalog, je Spiel eine Kachel. OpenLigaDB liefert die Spielpläne.</p><div class="panel"><h2>Streams aus vorhandenen Add-ons (optional)</h2><p>Die öffentlichen Schnittstellen von Sports Streams und Nuvio Live Sports werden probeweise geprüft. <strong>PenguPlay Live TV funktioniert nur mit deiner persönlichen konfigurierten Manifest-URL.</strong> Füge sie hier hinzu, auch wenn du die Pengu-Kataloge in Nuvio ausgeblendet hast. Nicht die /configure-URL.</p><form action="/generate" method="get"><label for="sources">Manifest-URLs, eine pro Zeile:</label><textarea id="sources" name="sources" rows="5" placeholder="https://…/manifest.json"></textarea><p><button type="submit">Installations-URL erstellen</button></p></form><small>Ohne persönliche URL kann der Worker nicht auf deine PenguPlay-Live-TV-Konfiguration zugreifen. Streams erscheinen nur, wenn ein Anbieter eine Begegnung zuordnen und einen Direktstream liefern kann. Vor dem Spielbeginn sind Streams oft noch nicht verfügbar. Keine direkte DaddyLive-Integration. Nicht jeder Event ist in den externen Add-ons auffindbar.</small></div><div class="panel"><p><a href="/manifest.json">Manifest ohne Streams</a> · <a href="/health">Status</a> · <a href="/debug/sources.json">Quellen-Diagnose</a></p><p>Für Nuvio die generierte URL unter Add-ons hinzufügen, nicht unter JavaScript-Plugins.</p></div><p><small>Daten: <a href="https://openligadb.de/">OpenLigaDB</a> (ODbL 1.0). Keine Gewähr für die Abdeckung aller deutschen Ligen. Unabhängiges Community-Projekt.</small></p></main></html>`;
+const page=()=>`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio Fußball</title>${CSS}<main><h1>⚽ Deutscher Fußball für Nuvio</h1><p>Je Liga und Pokalwettbewerb ein Katalog, je Spiel eine Kachel. OpenLigaDB liefert die Spielpläne.</p><div class="panel"><h2>Streams aus vorhandenen Add-ons (optional)</h2><p>Die öffentlichen Schnittstellen von Sports Streams und Nuvio Live Sports werden probeweise geprüft. <strong>PenguPlay Live TV funktioniert nur mit deiner persönlichen konfigurierten Manifest-URL.</strong> Füge sie hier hinzu, auch wenn du die Pengu-Kataloge in Nuvio ausgeblendet hast. Nicht die /configure-URL.</p><form action="/generate" method="get"><label for="sources">Manifest-URLs, eine pro Zeile:</label><textarea id="sources" name="sources" rows="5" placeholder="https://…/manifest.json"></textarea><p><button type="submit">Installations-URL erstellen</button></p></form><small>Ohne persönliche URL kann der Worker nicht auf deine PenguPlay-Live-TV-Konfiguration zugreifen. Streams erscheinen nur, wenn ein Anbieter eine Begegnung zuordnen und einen Direktstream liefern kann. Vor dem Spielbeginn sind Streams oft noch nicht verfügbar. Ein eigener DaddyLive-Spielplanadapter wird zusätzlich geprüft. Dessen dokumentierte Playerlinks öffnen HTML-Seiten und sind keine nativen HLS-Streams. Nicht jeder Event ist in den externen Add-ons auffindbar.</small></div><div class="panel"><p><a href="/manifest.json">Manifest ohne Streams</a> · <a href="/health">Status</a> · <a href="/debug/sources.json">Quellen-Diagnose</a></p><p>Für Nuvio die generierte URL unter Add-ons hinzufügen, nicht unter JavaScript-Plugins.</p></div><p><small>Daten: <a href="https://openligadb.de/">OpenLigaDB</a> (ODbL 1.0). Keine Gewähr für die Abdeckung aller deutschen Ligen. Unabhängiges Community-Projekt.</small></p></main></html>`;
 function installPage(url,count) {return `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio installieren</title>${CSS}<main><h1>⚽ Nuvio-Installation</h1><div class="panel"><p>${count} Sport-Add-on(s) konfiguriert.</p><p>Diese URL unter <strong>Nuvio → Add-ons</strong> hinzufügen:</p><input id="u" readonly value="${escape(url)}"><p><button id="copy" onclick="navigator.clipboard.writeText(document.getElementById('u').value).then(()=>this.innerText='Kopiert!')">URL kopieren</button></p><a href="${escape(url)}">Manifest öffnen</a> · <a href="${escape(url.replace(/manifest\.json$/,'debug/sources.json'))}">Quellen prüfen</a></div><small>Die Installations-URL kann persönliche Zugriffstoken deiner Sport-Add-ons enthalten. Nicht öffentlich teilen.</small><p><a href="/configure">Zurück</a></p></main></html>`;}
 export async function handle(request,env={},fetcher=fetch) {
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,OPTIONS'}});
@@ -249,14 +266,14 @@ export async function handle(request,env={},fetcher=fetch) {
     let pathname=url.pathname,prefix='',sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(','));
     const match=pathname.match(/^\/u\/([A-Za-z0-9_-]{1,3500})(\/.*)$/);
     if(match){pathname=match[2];prefix=`/u/${match[1]}`;sources=decodeConfig(match[1]);}
-    if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher)},200,0);
+    if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const list=await leagues(env,fetcher);
     if(pathname==='/manifest.json')return json(manifest(list),200,3600);
     const catalog=pathname.match(/^\/catalog\/tv\/([^/]+)\.json$/);
     if(catalog){const league=list.find(x=>catalogId(x.shortcut)===catalog[1]);if(!league)return json({metas:[]});const games=await fixtures(league,env,fetcher);return json({metas:selectUpcoming(games).map(m=>meta(m,league,origin,prefix))},200,120);}
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
-    if(details){const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);const games=await fixtures(found.league,env,fetcher),game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);return details[1]==='meta'?json({meta:meta(game,found.league,origin,prefix)}):json({streams:await resolveStreams(game,sources,fetcher)},200,30);}
+    if(details){const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);const games=await fixtures(found.league,env,fetcher),game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);return details[1]==='meta'?json({meta:meta(game,found.league,origin,prefix)}):json({streams:await resolveStreams(game,sources,fetcher,env)},200,30);}
     const image=pathname.match(/^\/poster\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.svg$/);
     if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[1].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);const games=await fixtures(league,env,fetcher);const game=games.find(x=>String(x.matchID)===image[2]);if(!game)return json({error:'Spiel nicht gefunden'},404);return new Response(await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher),{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});}
     return json({error:'Nicht gefunden'},404);
