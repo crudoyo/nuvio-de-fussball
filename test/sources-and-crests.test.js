@@ -55,7 +55,7 @@ test('providers diagnostic does not display personal URL or token and flags cata
   const uri='https://test.workers.dev/debug/sources.json';
   const r=await handle(new Request(uri),{},fetcher);
   assert.equal(r.status,200);
-  assert.equal((await r.json()).providers.length,4);
+  assert.equal((await r.json()).providers.length,5);
 });
 
 test('Sports Streams mirrors remain available for matching when main instance blocks the Worker',async()=>{
