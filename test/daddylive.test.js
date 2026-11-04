@@ -182,8 +182,8 @@ test('unmatched future game explains dates covered by DaddyLive schedule',()=>{
 });
 test('fixture date present but title mismatched is distinguished from missing date',()=>{
   const events=parseDaddySchedule(schedule);
-  const other={...fixture,team1:{teamName:'FC Bayern München'},
-    team2:{teamName:'Hamburger SV'}};
+  const other={...fixture,team1:{teamName:'Bayer 04 Leverkusen'},
+    team2:{teamName:'RB Leipzig'}};
   const report=diagnoseDaddyFixture(other,events,matchScore);
   assert.equal(report.assessment,'fixture_not_matched_to_schedule');
   assert.equal(report.eventsOnFixtureDate,2);
