@@ -13,7 +13,7 @@ function network(overrides={}){
   return async (url,options)=>{
     assert.equal(options.redirect,'manual');assert(options.signal);
     if(Object.hasOwn(overrides,url))return overrides[url](options);
-    if(url==='https://thedaddy.pk/stream/stream-426.php')return new Response('<script>const SRC="'+media+'";</script>');
+    if(url==='https://thedaddy.li/stream/stream-426.php')return new Response('<script>const SRC="'+media+'";</script>');
     if(url===media)return new Response(master);
     if(url==='https://cdn.example.org/child.m3u8')return new Response(playlist);
     if(url==='https://cdn.example.org/seg.ts'){
@@ -30,20 +30,20 @@ test('reads literal media and explicit Base64 data expressions without executing
   assert.equal(literalMedia(`const a='${encoded}';const video=atob(a);source:{src:video,type:'hls'}`),media);
   assert.equal(literalMedia(`function decode(v){return atob(v);}const a='${encoded}';const video=decode(a);source:{src:video,type:'hls'}`),media);
   assert.equal(literalMedia(`const a='${encoded}';const video=evil(a);source:{src:video,type:'hls'}`),null);
-  for(const url of [media+'?token=private',media+'?t=private','https://localhost/a.m3u8','https://thedaddy.pk/player.php'])
+  for(const url of [media+'?token=private',media+'?t=private','https://localhost/a.m3u8','https://thedaddy.li/player.php'])
     assert.equal(literalMedia('const SRC="'+url+'";'),null);
 });
 test('automatic HLS resolves master, media playlist and ordinary TS with native headers',async()=>{
   const result=await resolveDaddyChannel('426',network());
   assert.equal(result.status,'resolved');assert.equal(result.stream.url,media);
   assert.equal(result.stream.externalUrl,undefined);
-  assert.equal(result.stream.behaviorHints.proxyHeaders.request.Referer,'https://thedaddy.pk/');
-  assert.equal(result.stream.behaviorHints.proxyHeaders.request.Origin,'https://thedaddy.pk');
+  assert.equal(result.stream.behaviorHints.proxyHeaders.request.Referer,'https://thedaddy.li/');
+  assert.equal(result.stream.behaviorHints.proxyHeaders.request.Origin,'https://thedaddy.li');
   assert.equal(result.stream.behaviorHints.notWebReady,true);
 });
 test('follows named provider iframe while ignoring ads and allows offered same-channel alternative',async()=>{
-  const root='https://thedaddy.pk/stream/stream-426.php';
-  const fallback='https://thedaddy.pk/cast/stream-426.php';
+  const root='https://thedaddy.li/stream/stream-426.php';
+  const fallback='https://thedaddy.li/cast/stream-426.php';
   const packed='https://dembed.st/player/426';
   const result=await resolveDaddyChannel('426',network({
     [root]:()=>new Response(`<iframe src="https://ad.example.org/"></iframe><iframe src="${packed}" id="playerFrame"></iframe><button data-url="${fallback}">Player</button>`),
@@ -54,7 +54,7 @@ test('follows named provider iframe while ignoring ads and allows offered same-c
 });
 test('provider transport requirements never trigger a playlist-token request',async()=>{
   const seen=[];
-  const fake=async(url,options)=>{seen.push(url);return url.includes('thedaddy.pk')
+  const fake=async(url,options)=>{seen.push(url);return url.includes('thedaddy.li')
     ?new Response('<iframe id="thatframe" src="https://dembed.st/player/426"></iframe>')
     :new Response('const SRC="'+media+'";');};
   const result=await resolveDaddyChannel('426',fake);
@@ -62,8 +62,8 @@ test('provider transport requirements never trigger a playlist-token request',as
   assert.equal(seen.length,2);assert(seen.every(u=>!u.includes('playlist-token')));
 });
 test('an incompatible manifest does not hide an offered same-channel hub player',async()=>{
-  const root='https://thedaddy.pk/stream/stream-426.php';
-  const hub='https://thedaddy.pk/hub/stream-426.php';
+  const root='https://thedaddy.li/stream/stream-426.php';
+  const hub='https://thedaddy.li/hub/stream-426.php';
   const bad='https://cdn.example.org/unusable.m3u8';
   const result=await resolveDaddyChannel('426',network({
     [root]:()=>new Response(`<script>const SRC="${bad}";</script><button data-url="${hub}">Player</button>`),
@@ -75,10 +75,10 @@ test('an incompatible manifest does not hide an offered same-channel hub player'
 });
 test('known custom frames do not consume the standard-player page budget',async()=>{
   const folders=['cast','watch','plus','casting','player'];
-  const root='https://thedaddy.pk/stream/stream-426.php';
+  const root='https://thedaddy.li/stream/stream-426.php';
   const overrides={[root]:()=>new Response('<iframe id="thatframe" src="https://dembed.st/primary"></iframe>'+
-    folders.map(folder=>`<button data-url="https://thedaddy.pk/${folder}/stream-426.php">Player</button>`).join(''))};
-  for(const folder of folders)overrides[`https://thedaddy.pk/${folder}/stream-426.php`]=()=>new Response(folder==='player'
+    folders.map(folder=>`<button data-url="https://thedaddy.li/${folder}/stream-426.php">Player</button>`).join(''))};
+  for(const folder of folders)overrides[`https://thedaddy.li/${folder}/stream-426.php`]=()=>new Response(folder==='player'
     ?'const SRC="'+media+'";':`<iframe id="thatframe" src="https://dembed.st/${folder}"></iframe>`);
   const base=network(overrides);
   const result=await resolveDaddyChannel('426',async(url,options)=>{
@@ -98,7 +98,7 @@ test('refuses denied access and unsafe redirects without forwarding credentials'
   }
 });
 test('ignores optional cookies but never sends them or works around denied media access',async()=>{
-  const base=network({'https://thedaddy.pk/stream/stream-426.php':()=>new Response('const SRC="'+media+'";',
+  const base=network({'https://thedaddy.li/stream/stream-426.php':()=>new Response('const SRC="'+media+'";',
     {headers:{'set-cookie':'tracking=private'}})});
   const cookieFree=async(url,options)=>{
     assert(!Object.keys(options.headers).some(k=>/cookie|authorization/i.test(k)));
@@ -124,7 +124,7 @@ test('rejects excessive page bodies and invalid channel IDs',async()=>{
   assert.equal((await resolveDaddyChannel('426',async()=>new Response('x'.repeat(4*1024*1024+1)))).status,'response_too_large');
 });
 test('handles large current player pages without increasing manifest limits',async()=>{
-  const root='https://thedaddy.pk/stream/stream-426.php';
+  const root='https://thedaddy.li/stream/stream-426.php';
   const result=await resolveDaddyChannel('426',network({[root]:()=>new Response(' '.repeat(300000)+'const SRC="'+media+'";')}));
   assert.equal(result.status,'resolved');
   const largeManifest=await resolveDaddyChannel('426',network({[media]:()=>new Response(' '.repeat(262145))}));
@@ -173,9 +173,9 @@ test('automatic HLS appears before external fallbacks in the actual stream handl
   assert.deepEqual(nativeOnly.map(stream=>stream.url),[media]);
 });
 test('follows bounded public player redirects only to known hosts',async()=>{
-  const redirected='https://thedaddy.pk/cast/stream-426.php';
+  const redirected='https://thedaddy.pk/stream/stream-426.php';
   const result=await resolveDaddyChannel('426',network({
-    'https://thedaddy.pk/stream/stream-426.php':()=>new Response('',{status:302,headers:{location:redirected}}),
+    'https://thedaddy.li/stream/stream-426.php':()=>new Response('',{status:302,headers:{location:redirected}}),
     [redirected]:()=>new Response('const SRC="'+media+'";')
   }));
   assert.equal(result.status,'resolved');

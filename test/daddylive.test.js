@@ -49,12 +49,12 @@ test('strong match checks include both teams and UK kickoff time, prevent unrela
   assert.equal(matchDaddyEvents({...fixture,matchDateTimeUTC:'2026-11-08T21:00:00Z'},
     events,matchScore).length,0);
   assert.deepEqual(externalDaddyPlayers(fixture,events,matchScore).map(x=>x.externalUrl),[
-    'https://thedaddy.pk/stream/stream-302.php',
-    'https://thedaddy.pk/stream/stream-401.php'
+    'https://thedaddy.li/stream/stream-302.php',
+    'https://thedaddy.li/stream/stream-401.php'
   ]);
 });
 test('only documented numeric player ids are transformed into HTML web player URLs',()=>{
-  assert.equal(daddyPlayerUrl('302'),'https://thedaddy.pk/stream/stream-302.php');
+  assert.equal(daddyPlayerUrl('302'),'https://thedaddy.li/stream/stream-302.php');
   for(const bad of ['1/../../etc','https://evil.example','',0,'3?redir=1'])
     assert.equal(daddyPlayerUrl(bad),null);
 });
@@ -120,31 +120,33 @@ test('Worker exposes documented HTML player only after explicit setting, not a f
 });
 
 test('public 301 redirect to the current JSON URL is followed safely',async()=>{
-  const calls=[];
+  const calls=[];let currentRequests=0;
   const result=await getDaddySchedule({},async(url,opt)=>{
     const u=String(url);calls.push({url:u,mode:opt.redirect});
-    if(u==='https://thedaddy.pk/schedule/schedule-generated.json' && calls.length===1)
-      return asJson({},404);
+    if(new URL(u).pathname==='/')return asJson({},404);
+    if(u==='https://thedaddy.li/schedule/schedule-generated.json' && ++currentRequests===1)return asJson({},404);
     if(u==='https://dlstreams.st/schedule/schedule-generated.json')
       return new Response(null,{status:301,headers:{
-        location:'https://thedaddy.pk/schedule/schedule-generated.json'}});
+        location:'https://thedaddy.li/schedule/schedule-generated.json'}});
     return asJson(schedule);
   });
   assert.equal(result.reachable,true);
   assert.equal(result.footballEvents,2);
   assert(calls.every(c=>c.mode==='manual'));
-  assert.equal(result.attempts[0].reason,'HTTP 404');
+  assert.deepEqual(result.attempts.map(x=>x.reason),['HTTP 404','HTTP 404']);
+  assert.equal(currentRequests,2);
 });
 test('301 redirect to HTML homepage is reported, not treated as an empty schedule',async()=>{
   const result=await getDaddySchedule({},async url=>{
     const u=String(url);
-    if(u.includes('thedaddy.pk/schedule/'))return asJson({},404);
-    return new Response(null,{status:301,headers:{location:'https://thedaddy.pk/'}});
+    if(u.includes('thedaddy.li/schedule/'))return asJson({},404);
+    return new Response(null,{status:301,headers:{location:'https://thedaddy.li/'}});
   });
   assert.equal(result.reachable,false);
   assert.equal(result.attempts.length,3);
-  assert.equal(result.attempts[0].reason,'HTTP 404');
-  assert.equal(result.attempts[1].reason,'Public schedule redirected away from JSON');
+  assert.equal(result.attempts[0].reason,'Redirect loop');
+  assert.equal(result.attempts[1].reason,'HTTP 404');
+  assert.equal(result.attempts[2].reason,'Public schedule redirected away from JSON');
 });
 test('protected API never follows redirects containing its key',async()=>{
   const calls=[];
@@ -157,15 +159,16 @@ test('protected API never follows redirects containing its key',async()=>{
   });
   assert.equal(result.reachable,false);
   assert.equal(result.attempts[0].reason,'Protected API redirect blocked');
-  assert.equal(calls.length,4);
+  assert.equal(calls.length,9);
+  assert(calls.slice(1).every(url=>!url.includes(key)));
   assert(!calls.some(u=>u.includes('attacker.example')));
   assert(!JSON.stringify(result).includes(key));
 });
 test('public JSON error documents are not misclassified as successful schedules',async()=>{
   const result=await getDaddySchedule({},async()=>asJson({error:'not found'}));
   assert.equal(result.reachable,false);
-  assert(result.attempts.slice(0,2).every(x=>x.reason==='Invalid schema'));
-  assert.equal(result.attempts[2].reason,'Homepage schedule unavailable');
+  assert.equal(result.attempts[0].reason,'Homepage schedule unavailable');
+  assert(result.attempts.slice(1).every(x=>x.reason==='Invalid schema'));
 });
 
 test('unmatched future game explains dates covered by DaddyLive schedule',()=>{

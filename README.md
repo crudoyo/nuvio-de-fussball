@@ -1,9 +1,10 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.21 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.22 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
+- DaddyLive verwendet die aktuelle Hauptadresse `.li` und eine [begrenzte Liste geprüfter Domain-Aliase](docs/daddy-domains.md). Frische HTML-Spielpläne haben Vorrang vor alten JSON-Daten. Domainwechsel erhalten Sender-ID und Playerpfad; erfolgreiche Adressen werden bevorzugt, Versuche und Wartezeit begrenzt.
 - Die 1. Bundesliga und 3. Liga stehen zum Testen als zwei zusammenhängende Blöcke ganz oben: jeweils **Aktuelle Woche (Mo–So)**, **Freitag**, **Samstag**, **Sonntag**, **Kommende Woche (Mo–So)**. Danach folgen 2. Bundesliga, UEFA-Wettbewerbe, DFB-Pokal, Supercup, Frauenwettbewerbe und die weiteren alphabetisch sortierten Ligen.
 - **Neu:** UEFA Champions League (OpenLigaDB, Kürzel `ucl`), Europa League und Conference League (ESPN-Soccer-Spielplan-Adapter, ohne API-Schlüssel).
 - Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status. Die Wochenübersichten der 1. Bundesliga und 3. Liga zeigen alle Spiele von Montag bis Sonntag, einschließlich englischer Wochen; andere Kataloge zeigen 24 Stunden zurück und 30 Tage voraus. Die PNG-Poster enthalten, soweit verfügbar, beide **Vereinswappen**, kurze Mannschaftsnamen und bei den Testligen den Wochentag. Die Detailansicht erhält eine eigene PNG-Grafik mit beiden Wappen in der Bildmitte.
