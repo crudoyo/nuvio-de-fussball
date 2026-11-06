@@ -6,6 +6,7 @@
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import {startTime,matchdayNumber,matchdayLabel,weekdayLabel,hasCalendarCatalogs,
   CALENDAR_VIEWS,selectCalendarView} from './matchdays.js';
+import {standingsUrl,resultOfType,createStatsContext,statisticsLines} from './match-stats.js';
 export {startTime} from './matchdays.js';
 import { makeMatchPoster, makeMatchBackground, teamBadgeData } from './graphics.js';
 import { espnTeamsUrl, attachFallbackCrests, curatedCrest } from './crests.js';
@@ -19,7 +20,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.20';
+export const VERSION = '0.4.21';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -158,6 +159,15 @@ async function fixtures(league,env,fetcher,loadArtworkBackups=true) {
     return attachFallbackCrests(matches, await loadJSON(crestUrl,14400,fetcher));
   } catch { return matches; }
 }
+async function standings(league,env,fetcher){
+  const url=standingsUrl(league.shortcut,Number(env.SEASON)||seasonOf());
+  if(!url)return [];
+  try{
+    return await loadJSON(url,600,(target,options)=>fetcher(target,{
+      ...options,signal:AbortSignal.timeout(1500)
+    }));
+  }catch{return [];}
+}
 const dateLabel = m => { const d=startTime(m); return d ? new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d)+' Uhr' : 'Termin offen'; };
 export function selectUpcoming(items, now=Date.now()) {
   return items.filter(m=>{const t=+startTime(m);return t && t>now-86400_000 && t<now+30*86400_000;})
@@ -183,14 +193,20 @@ function matchCompetition(game,league){
   const day=hasCalendarCatalogs(league.shortcut)&&weekdayLabel(game);
   return day?{...league,name:league.name+' · '+day}:league;
 }
-function meta(m,league,origin,prefix='') {
+function meta(m,league,origin,prefix='',statistics=null) {
   const id=gameId(league,m), home=m.team1.teamName,away=m.team2.teamName;
   const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.png?v=${VERSION}`;
   const background=`${origin}${prefix}/background/${encodeURIComponent(league.shortcut)}/${m.matchID}.png?v=${VERSION}`;
-  const score=m.matchIsFinished && m.matchResults?.length? m.matchResults.find(r=>r.resultTypeID===2)||m.matchResults.at(-1):null;
+  const score=m.matchIsFinished?resultOfType(m):null;
+  const halftime=m.matchIsFinished?resultOfType(m,1):null;
   const round=hasCalendarCatalogs(league.shortcut)&&matchdayLabel(m);
   const day=hasCalendarCatalogs(league.shortcut)&&weekdayLabel(m);
-  const description=`${matchCompetition(m,league).name} · ${dateLabel(m)} · ${status(m)}. ${home} gegen ${away}.`+(score?` Endstand: ${score.pointsTeam1}:${score.pointsTeam2}.`:'')+' Videostreams nur, wenn ein verbundenes Sport-Add-on diese Begegnung eindeutig zuordnet.';
+  const description=[
+    ...(score?[`Endstand: ${score.pointsTeam1}:${score.pointsTeam2}`+
+      (halftime?` (Halbzeit ${halftime.pointsTeam1}:${halftime.pointsTeam2}).`:'.')]:[]),
+    ...statisticsLines(m,statistics),
+    `${matchCompetition(m,league).name} · ${dateLabel(m)} · ${status(m)}.`
+  ].join('\n');
   return {id,type:'tv',name:`${home} – ${away}`,poster,background,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:(day?day+' · ':'')+dateLabel(m),released:startTime(m)?.toISOString(),
     ...(round?{matchday:{number:matchdayNumber(m),name:round}}:{}),
     team1:{name:home,logo:teamLogo(m.team1)},team2:{name:away,logo:teamLogo(m.team2)},
@@ -408,12 +424,23 @@ export async function handle(request,env={},fetcher=fetch) {
     const catalog=pathname.match(/^\/catalog\/tv\/([^/]+)\.json$/);
     if(catalog){
       const found=parseCatalog(catalog[1],list);if(!found)return json({metas:[]});
-      const games=await fixtures(found.league,env,fetcher);
+      const [games,table]=await Promise.all([
+        fixtures(found.league,env,fetcher),standings(found.league,env,fetcher)
+      ]);
       const selected=found.view==='upcoming'?selectUpcoming(games):selectCalendarView(games,found.view);
-      return json({metas:selected.map(m=>meta(m,found.league,origin,prefix))},200,120);
+      const statistics=createStatsContext(games,table);
+      return json({metas:selected.map(m=>meta(m,found.league,origin,prefix,statistics))},200,120);
     }
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
-    if(details){const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);const games=await fixtures(found.league,env,fetcher),game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix)});const response=json({streams:await resolveStreams(game,sources,fetcher,env)},200,0);response.headers.set('cache-control','no-store');return response;}
+    if(details){
+      const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);
+      const [games,table]=await Promise.all([fixtures(found.league,env,fetcher),
+        details[1]==='meta'?standings(found.league,env,fetcher):Promise.resolve([])]);
+      const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
+      if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
+      const response=json({streams:await resolveStreams(game,sources,fetcher,env)},200,0);
+      response.headers.set('cache-control','no-store');return response;
+    }
     const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
     if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[2].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);
       // Avoid a second, serial ESPN request in image paths. An 8s delay is

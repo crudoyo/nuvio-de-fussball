@@ -37,6 +37,8 @@ for(const league of ['bl1','bl3']){
       throw new Error('Missing calendar catalog '+id);
     const catalog=await json('/catalog/tv/'+id+'.json?release='+version);
     if(!Array.isArray(catalog.metas))throw new Error('Invalid catalog '+id);
+    if(catalog.metas.some(m=>/Videostreams nur|Sport-Add-on diese Begegnung/.test(m.description||'')))
+      throw new Error('Technical stream warning remains in '+id);
     const ids=catalog.metas.map(m=>m.id);
     if(new Set(ids).size!==ids.length||ids.some(id=>!new RegExp(`^defootball_${league}_\\d+$`).test(id)))
       throw new Error('Invalid canonical game IDs in '+id);
@@ -60,6 +62,16 @@ for(const league of ['bl1','bl3']){
   console.log(JSON.stringify({league,currentWeek:weekWindow(now),current:current.length,
     friday:friday.length,saturday:saturday.length,sunday:sunday.length,
     followingWeek:weekWindow(now,1),following:following.length}));
+  if(current.length){
+    const sample=current[0],detail=(await json('/meta/tv/'+sample.id+'.json?release='+version)).meta;
+    for(const preview of [sample,detail]){
+      if(!preview?.description||!/Aktueller Saisonstand:|Form in diesem Wettbewerb:/.test(preview.description)||
+        /Videostreams nur/.test(preview.description))throw new Error('Missing match statistics in '+league);
+    }
+    console.log(JSON.stringify({league,statisticsInCatalogAndDetail:true,
+      tableAvailable:sample.description.includes('Aktueller Saisonstand:'),
+      recentFormAvailable:sample.description.includes('Form (')}));
+  }
 }
 // Validate the real Cloudflare -> logo CDN -> PNG embedding path, not only GitHub's network.
 const crests=await json('/debug/crests/bl3.json?release='+version);
