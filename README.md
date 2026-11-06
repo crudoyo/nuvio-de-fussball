@@ -1,12 +1,12 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.18 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.19 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
-- Je Wettbewerb ein Katalog: Bundesliga, 2. Bundesliga, 3. Liga, DFB-Pokal, Frauen-Bundesliga, Frauen-Pokal, Supercup und automatisch erkannte deutsche Regional-, Ober- und Amateurligen.
+- Die 1. Bundesliga und 3. Liga haben zum Testen je drei Kataloge: **Nächster Spieltag**, **Darauffolgender Spieltag**, **Sonntagsspiele**. Andere Wettbewerbe behalten ihre bisherige Übersicht: 2. Bundesliga, DFB-Pokal, Frauen-Bundesliga, Frauen-Pokal, Supercup und automatisch erkannte deutsche Regional-, Ober- und Amateurligen.
 - **Neu:** UEFA Champions League (OpenLigaDB, Kürzel `ucl`), Europa League und Conference League (ESPN-Soccer-Spielplan-Adapter, ohne API-Schlüssel).
-- Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status; 24 Stunden zurück und 30 Tage voraus. Die PNG-Poster enthalten, soweit verfügbar, beide **Vereinswappen** und kurze Mannschaftsnamen. Die Detailansicht erhält eine eigene PNG-Grafik mit beiden Wappen in der Bildmitte.
+- Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status. In der 1. Bundesliga und 3. Liga bleiben vollständige Spieltage zusammen; andere Kataloge zeigen 24 Stunden zurück und 30 Tage voraus. Die PNG-Poster enthalten, soweit verfügbar, beide **Vereinswappen** und kurze Mannschaftsnamen. Die Detailansicht erhält eine eigene PNG-Grafik mit beiden Wappen in der Bildmitte.
 - Konfigurationsseite `/configure` für bis zu sechs **exakte HTTPS-Manifest-URLs** aus zusätzlichen Sport-Add-ons (insbesondere die persönliche Nuvio-Live-Sports- oder PenguPlay-Live-TV-URL).
 - Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuvio.moaqeel6679.my.id`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Direkter DaddyLive-Spielplanadapter und dokumentierte externe HTML-Playerlinks. Begrenzte automatische Auflösung normaler öffentlicher HLS-Quellen; keine Player-Entschlüsselung und keine P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
@@ -53,7 +53,10 @@ Veröffentlichen: `npx wrangler deploy` (Cloudflare-Login erforderlich).
 - `/configure` – Webkonfigurator
 - `/manifest.json` – Add-on-Manifest ohne Streams
 - `/u/<Konfiguration>/manifest.json` – individuelles Manifest
-- `/catalog/tv/defootball_bl1.json` – Bundesliga-Spielkatalog
+- `/catalog/tv/defootball_bl1.json` – nächster bzw. laufender Bundesliga-Spieltag
+- `/catalog/tv/defootball_bl1_following.json` – darauffolgender Bundesliga-Spieltag
+- `/catalog/tv/defootball_bl1_sunday.json` – Bundesliga-Spiele am kommenden Sonntag (Europe/Berlin)
+- Für die 3. Liga dieselben drei Kataloge mit `bl3` statt `bl1`
 - `/meta/tv/defootball_bl1_<MatchID>.json` – Begegnungsdetails
 - `/stream/tv/defootball_bl1_<MatchID>.json` – Streams, falls zugeordnet
 - `/poster/bl1/<MatchID>.png` – Spielkachel mit Vereinslogos
@@ -256,3 +259,11 @@ OpenLigaDB verwendet unter anderem „Slavia Prag“, „Inter Mailand“ und �
 Das Metadatenfeld `background` verweist auf ein eigenes **1280 × 720 PNG**. Bisher wurde hier die 720 × 405 Spielkachel wiederverwendet; beim Zuschneiden auf eine hohe Handy-Detailansicht blieben vor allem „VS“ und vergrößerte Textreste übrig. Im neuen Bild stehen beide Wappen innerhalb der zentralen 440 Pixel, ohne erneut eingebrannte Spiel-, Datums- oder Wettbewerbstexte. Die App zeigt diese Angaben bereits selbst. Die Katalogkachel bleibt ein separates Querformat. Als Referenz verwendet [Nuvios DetailHero](https://github.com/NuvioMedia/NuvioMobile/blob/cmp-rewrite/composeApp/src/commonMain/kotlin/com/nuvio/app/features/details/components/DetailHero.kt) `background` mit Center-Crop und zusätzlichem Zoom. Regressionstests prüfen beide tatsächlich gerasterten Wappen bei Hoch-, Quadrat- und Querformat-Zuschnitten mit 1,08-fachem Zoom.
 
 Poster und Hintergründe erhalten neue URLs mit `v=0.4.18`. Der Produktions-Smoke-Test prüft zusätzlich die vollständige Champions-League-Wappenabdeckung und einen echten Hintergrund-PNG-Abruf. Die Darstellung im konkret installierten Handy-/TV-Client bleibt separat am Gerät zu kontrollieren.
+
+## Spieltagsreihen für 1. Bundesliga und 3. Liga (v0.4.19)
+
+Die bisherigen Katalog-IDs `defootball_bl1` und `defootball_bl3` zeigen jetzt den nächsten regulären bzw. noch laufenden Spieltag. Zwei zusätzliche Reihen pro Liga zeigen den darauffolgenden Spieltag und alle Spiele des kommenden Sonntags. Sonntags ist damit der heutige Sonntag gemeint, montags der folgende; maßgeblich ist das Datum in Europe/Berlin. An einem spielfreien Sonntag bleibt die Reihe leer. Innerhalb jeder Reihe sind die Spiele nach Anstoßzeit sortiert; noch nicht terminierte Partien stehen am Ende ihres Spieltags.
+
+Die Gruppierung verwendet OpenLigaDBs `group.groupOrderID` und `group.groupName`. Abgeschlossene Freitagsspiele bleiben im noch laufenden Spieltag sichtbar. Ein einzelnes weit verschobenes Nachholspiel bleibt in seinem ursprünglichen Spieltag, hält diesen aber nicht wochenlang als „nächsten Spieltag“ offen: Die reguläre Spieltagsphase wird anhand der mittleren Anstoßzeit und eines Fensters von vier Tagen auf beiden Seiten erkannt. Nachdem alle regulären Spiele beendet bzw. ihre Anstoßzeiten mehr als drei Stunden vergangen sind, wird der nächste reguläre Spieltag angezeigt. Stehen am Saisonende nur Nachholspiele aus, werden diese wieder berücksichtigt. Fehlende Spieltagsnummern werden nicht aus dem Kalender erraten.
+
+Karten und Detailtexte enthalten die tatsächliche Spieltagsbezeichnung. Alle drei Reihen verweisen auf dieselben bestehenden Spiel-, Detail-, Bild- und Stream-IDs. 2. Bundesliga, UEFA-Wettbewerbe und weitere Ligen sind von diesem Test nicht betroffen. Neue Manifest-Kataloge erfordern in Nuvio gegebenenfalls ein Aktualisieren oder erneutes Hinzufügen derselben bisherigen Manifest-URL; persönliche Konfigurationen können beibehalten werden. Tests prüfen komplette Spieltage, Nachholspiele, Länderspielpausen, Sommer-/Winterzeit, persönliche URLs und die sechs Katalogrouten. Der Produktions-Smoke-Test prüft die veröffentlichten Reihen zusätzlich auf Spieltagszuordnung und Sortierung.
