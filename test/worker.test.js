@@ -8,6 +8,7 @@ import {
 const iso = new Date(Date.now() + 90 * 60_000).toISOString().replace(/Z$/, '');
 const fixture = {
   matchID: 9876, matchDateTimeUTC: iso, matchIsFinished: false,
+  group:{groupOrderID:9,groupName:'9. Spieltag'},
   team1: {teamName: 'FC Bayern München'}, team2: {teamName: 'Rot-Weiss Essen'}
 };
 const response = (x, status=200) => new Response(JSON.stringify(x), {

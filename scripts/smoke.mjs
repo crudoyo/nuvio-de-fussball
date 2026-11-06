@@ -1,6 +1,7 @@
 // Public production smoke check. Never accepts a personal /u/... manifest URL.
 import {readFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
+import {MATCHDAY_VIEWS,upcomingSunday,berlinDate} from '../src/matchdays.js';
 const base=new URL(process.env.WORKER_SMOKE_URL);
 if(base.protocol!=='https:'||base.username||base.password||base.pathname!=='/'||base.search||base.hash)
   throw new Error('WORKER_SMOKE_URL must be a public HTTPS origin');
@@ -23,6 +24,33 @@ if(health.nativePlayback.nativeOnly!==false||health.nativePlayback.browserFallba
 const manifest=await json('/manifest.json?release='+version);
 if(manifest.version!==version)throw new Error('Manifest and health versions differ');
 console.log(JSON.stringify({version:health.version,nativePlayback:health.nativePlayback,manifestVersion:manifest.version}));
+for(const league of ['bl1','bl3']){
+  const rows=await Promise.all(MATCHDAY_VIEWS.map(async view=>{
+    const id=`defootball_${league}${view.suffix}`;
+    if(!manifest.catalogs.some(c=>c.id===id&&c.name.endsWith(' · '+view.label)))
+      throw new Error('Missing matchday catalog '+id);
+    const catalog=await json('/catalog/tv/'+id+'.json?release='+version);
+    if(!Array.isArray(catalog.metas))throw new Error('Invalid catalog '+id);
+    const ids=catalog.metas.map(m=>m.id);
+    if(new Set(ids).size!==ids.length||ids.some(id=>!new RegExp(`^defootball_${league}_\\d+$`).test(id)))
+      throw new Error('Invalid canonical game IDs in '+id);
+    const dates=catalog.metas.map(m=>Date.parse(m.released)).filter(Number.isFinite);
+    if(dates.some((d,i)=>i&&d<dates[i-1]))throw new Error('Unsorted kickoffs in '+id);
+    if(view.view==='sunday'){
+      if(catalog.metas.some(m=>!m.released||berlinDate(m.released)!==upcomingSunday()))
+        throw new Error('Wrong Berlin Sunday in '+id);
+    }else if(catalog.metas.some(m=>!m.matchday?.number||m.matchday.number!==catalog.metas[0].matchday?.number))
+      throw new Error('Mixed/missing official rounds in '+id);
+    return catalog.metas;
+  }));
+  const [next,following,sunday]=rows;
+  if(!next.length)throw new Error('No next matchday in '+league);
+  if(following.length&&following[0].matchday.number<=next[0].matchday.number)
+    throw new Error('Following round does not follow next round in '+league);
+  console.log(JSON.stringify({league,nextMatchday:next[0].matchday.number,next:next.length,
+    followingMatchday:following[0]?.matchday.number,following:following.length,
+    sunday:upcomingSunday(),sundayGames:sunday.length}));
+}
 // Validate the real Cloudflare -> logo CDN -> PNG embedding path, not only GitHub's network.
 const crests=await json('/debug/crests/bl3.json?release='+version);
 const rwe=crests.clubs?.find(x=>x.club==='Rot-Weiss Essen');
