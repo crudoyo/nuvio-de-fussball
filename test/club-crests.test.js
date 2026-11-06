@@ -73,8 +73,8 @@ test('match metadata publishes team crest URLs to native Nuvio clients',async()=
   assert.equal(r.status,200);
   const {meta}=await r.json();
   assert(meta.team1.logo.startsWith('https://a.espncdn.com/'));
-  assert(meta.team2.logo.startsWith('https://r2.thesportsdb.com/'));
+  assert.equal(meta.team2.logo,'https://www.footylogos.com/dls/logo/rgba-v1/rot-weiss-essen.png');
   assert.equal(meta.team1.name,match.team1.teamName);
   assert.equal(meta.team2.name,match.team2.teamName);
-  assert.match(meta.poster,/\.png\?v=0\.4\.16$/);
+  assert.match(meta.poster,/\.png\?v=0\.4\.17$/);
 });
