@@ -7,6 +7,7 @@
  * football club with a basketball/hockey club from the same city.
  */
 import {CLUB_LOGOS} from './club-logo-seed.js';
+import {thirdLigaCrest} from './third-league-crests.js';
 
 const LOCAL_ALIASES={
   'fcbayernmunchen':'bayernmunich',
@@ -72,6 +73,9 @@ function candidatesForCrest(name){
   return [...out];
 }
 export function curatedCrest(name){
+  // An exact, season-checked 3. Liga identity beats generic city-based seeds.
+  const thirdLeague=thirdLigaCrest(name);
+  if(thirdLeague)return thirdLeague;
   for(const key of candidatesForCrest(name)){
     const value=CLUB_LOGOS[key];
     if(value && /^https:\/\/(?:a\.espncdn\.com|r2\.thesportsdb\.com)\//.test(value))return value;

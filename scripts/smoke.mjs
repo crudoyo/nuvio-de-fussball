@@ -23,6 +23,13 @@ if(health.nativePlayback.nativeOnly!==false||health.nativePlayback.browserFallba
 const manifest=await json('/manifest.json?release='+version);
 if(manifest.version!==version)throw new Error('Manifest and health versions differ');
 console.log(JSON.stringify({version:health.version,nativePlayback:health.nativePlayback,manifestVersion:manifest.version}));
+// Validate the real Cloudflare -> logo CDN -> PNG embedding path, not only GitHub's network.
+const crests=await json('/debug/crests/bl3.json?release='+version);
+const rwe=crests.clubs?.find(x=>x.club==='Rot-Weiss Essen');
+if(crests.total!==20||crests.ok!==20||!rwe?.usable||
+  rwe.imageUrl!=='https://www.footylogos.com/dls/logo/rgba-v1/rot-weiss-essen.png')
+  throw new Error('Production 3. Liga badges incomplete: '+crests.ok+'/'+crests.total);
+console.log(JSON.stringify({thirdLigaCrests:crests.ok,total:crests.total,rwe:rwe.imageUrl}));
 // This is a transport diagnostic, not an assertion of actual device playback.
 const diagnostic=await json('/debug/daddy-native/426.json');
 console.log(JSON.stringify({channelId:diagnostic.channelId,status:diagnostic.status,

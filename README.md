@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.16 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.17 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -231,3 +231,17 @@ Die PNG-Konvertierung nutzt eingebundene Roboto-Schriften. Quellbilder werden be
 ## Schnellere Posterabrufe v0.4.16
 
 Der Nuvio-TV-Bildlader hat laut `NuvioApplication.kt` ein Gesamtzeitlimit von 8 Sekunden. Um diesen Wert einzuhalten, ruft der Worker bei Posteranfragen nicht mehr zusätzlich die komplette ESPN-Teamübersicht ab. Die vorhandenen OpenLigaDB- und lokalen Team-Logo-Adressen werden weiterhin genutzt. Falls eine bekannte Rasterdatei nicht funktioniert, werden alternative Mannschaftsbild-URLs parallel statt nacheinander angefragt. Der vollständige PNG-Response wird für 15 Minuten in Cloudflares Edge-Cache zwischengespeichert. Dadurch sind nachfolgende Posterabrufe deutlich schneller; beim ersten Abruf oder bei langsamen Bild-Hosts sind Zeitüberschreitungen weiterhin möglich.
+
+
+## 3. Liga: vollständige Vereinswappen (v0.4.17)
+
+Für die **20 vom DFB bestätigten Vereine der Saison 2026/27** besteht eine feste, eindeutige Wappenzuordnung. Sie berücksichtigt die tatsächliche Zulassungsentscheidung (TSV Havelse statt TSV 1860 München), verschiedene Schreibweisen von Rot-Weiss Essen, die beiden Kölner Vereine und die zweiten Mannschaften von Stuttgart und Hoffenheim. Rot-Weiss Essen verwendet jetzt die richtige rot-weiße RWE-Kreisgrafik statt der zuvor aus einer allgemeinen `essen`-Suche bezogenen Quelle.
+
+Die 18 eigenständigen Vereinswappen verwenden öffentlich verlinkbare transparente PNG-Dateien von [FootyLogos](https://www.footylogos.com/competition/3-liga) (Quellenangabe für die dortigen Dateien), Hoffenheim II und VfB Stuttgart II die Vereinswappen von ESPN. Es werden **keine** Vereinswappen anhand bloß ähnlicher Städtenamen oder aus anderen Sportarten geraten. Fällt die feste Quelle aus, bleiben OpenLigaDB und die vorhandenen weiteren Rückfallquellen verfügbar. Alle Marken bleiben Eigentum der Vereine; die Bildquellen können ihre Zugriffsbedingungen ändern.
+
+- `npm test` testet die 20 Vereine und Aliasnamen sowie die vollständige Einbettung in die PNG-Poster.
+- `npm run check:crests` lädt **alle 20 echten Bilddateien** und prüft HTTP-Status, PNG-MIME-Typ, PNG-Signatur und das Maximalbudget von 240 kB. Dies läuft auch bei jedem Pull Request in GitHub Actions und benötigt Netzwerkzugang.
+- `/debug/crests/bl3.json` prüft im **produktiven Worker** mit genau derselben Bildpipeline, welche der 20 Grafiken tatsächlich eingebettet werden können (`ok` von `total`). Das ist die wichtigste Diagnose bei Abweichungen zwischen GitHub und Fire TV.
+- Versionierte Posteradressen mit `v=0.4.17` vermeiden alte Grafiken aus dem Cache. Das Update ist erst nach dem Worker-Deployment und gegebenenfalls einem Add-on-Refresh in Nuvio sichtbar.
+
+Offizielle Saisonquelle: https://www.dfb.de/news/teilnehmerfeld-der-3-liga-steht-fest-havelse-rueckt-fuer-1860-nach

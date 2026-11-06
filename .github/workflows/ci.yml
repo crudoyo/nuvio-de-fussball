@@ -23,6 +23,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Run addon tests
         run: npm test
+      - name: Verify all 20 live 3. Liga PNG crest URLs
+        run: npm run check:crests
       - name: Validate Cloudflare Workers build
         run: npx wrangler deploy --dry-run --outdir dist
       - name: Verify deployed version and report native availability
