@@ -29,6 +29,61 @@ Manifest und zurückgegebene Direktstreams belegen ebenfalls keine vollständige
 Bild-/Tonwiedergabe auf dem Zielgerät. Der unten beschriebene begrenzte direkte
 DaddyLive-Resolver erhält durch diese Änderung keinen neuen Spezialtransport.
 
+## Referenzprüfung: Nuvio Live Sports (06.11.2026)
+
+Der vom Nutzer genannte Quellcode
+[`rajhodedara/live-sport-plugin`](https://github.com/rajhodedara/live-sport-plugin)
+wurde am Commit `92589e4c0bef327d7cc483c3fbe2d40908ba8e17` geprüft. Dieser
+serverseitige Wiedergabeweg ergänzt die ältere Android-Analyse unten: Für
+vergleichbare Quellen muss nicht zwingend der Nuvio-Player geändert werden.
+
+Die konkrete Kette in der Referenz:
+
+1. [`DaddyLiveProvider.resolveStream`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/providers/DaddyLiveProvider.js#L905)
+   prüft alternative Playerpfade für dieselbe Sender-ID, lädt die eingebetteten
+   Player und folgt begrenzten weiteren Player-Ebenen. Tote Embed-Hosts werden
+   ausgelassen; eine Hostregistrierung priorisiert bekannte funktionierende Wege.
+2. [`_resolveFromHtml`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/providers/DaddyLiveProvider.js#L348)
+   liest unter anderem die kodierte `_econfig`, normale HLS-Konfigurationen,
+   JSON-Playerantworten und verschachtelte Frames. Dabei werden auch in JSON
+   maskierte Querytrenner erhalten. Ein erfolgreich dekodierter Link ist erst
+   die Eingabe für die weitere Medienbehandlung.
+3. [`_buildManifestStream`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/providers/DaddyLiveProvider.js#L538)
+   gibt einen eigenen HLS-Endpunkt zurück. Er wird vor Veröffentlichung zu
+   `/api/manifest.m3u8` umgeschrieben. Manifestabruf und Player-Unterabrufe
+   müssen dasselbe Referer-/Origin-Paar verwenden; der Titel »Direct Stream«
+   schließt einen serverseitigen Playlistproxy nicht aus.
+4. Der [`Manifest-Endpunkt`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/routes/manifest.js#L30)
+   lädt und prüft Playlists, schreibt Folgeadressen um und hält Live-Playlists
+   kurz im Cache. [`remint.js`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/remint.js#L180)
+   kann für die ursprüngliche Quelle eine frische Medienadresse ermitteln,
+   wenn eine abgelaufene Adresse abgewiesen wird.
+5. [`HlsRewriteService`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/services/HlsRewriteService.js#L142)
+   behandelt Varianten und Ressourcen in HLS-Tags. Normale Mediensegmente bleiben
+   CDN-Abrufe. Für bestimmte mit Bildheadern versehene TS-Segmente existieren
+   gesonderte Byte-Range-/Proxy-Wege. Der Code beweist nicht, dass jeder Sender
+   diese Sonderbehandlung benötigt.
+
+Die bereits gelesenen Original-Streamantworten für Magenta Sport 303 und DAZN1 DE
+zeigen den eigenen `/api/manifest.m3u8`-Endpunkt. Die darin enthaltenen
+CDN-Adressen verwenden HTTPS auf Port 8443, die Queryfelder `s` und `e` sowie
+`https://assetrage.net/` als Referer. Querywerte und vollständige Medienadressen
+werden hier nicht gespeichert. Damit ist für die gezeigten Optionen der
+Playlistproxy nachgewiesen; deren konkrete Segmentformate wurden nicht geprüft.
+
+Unser direkter Resolver unterstützt `_econfig` und diese Embed-Hosts noch nicht;
+`publicResourceUrl` lehnt explizite Ports ab. Er besitzt außerdem weder eigene
+Playlist-Ausgabe noch Quellen-Erneuerung oder Segmentanpassung. Der Status
+`provider_transport_required` eines anderen Testkanals ist deshalb kein Beleg,
+dass diese konkreten Sender eine Android-DataSource erfordern.
+
+Die Korrektur in 0.4.23 übernimmt weiterhin fertige Ergebnisse des ursprünglichen
+Add-ons. Eine eigenständige DaddyLive-Anbindung nach dieser Referenz ist damit
+noch nicht implementiert oder auf dem Nutzergerät getestet. Die bestätigten
+Daddy-Domain-Aliase, Sender-IDs, Requestlimits und Abbruchregeln bleiben für
+eine spätere Anpassung maßgeblich; aus der Referenz entsteht keine pauschale
+Freigabe unbekannter Hosts oder aller Ports.
+
 ## Ergänzung für Version 0.4.6
 
 Die nachfolgende ursprüngliche Analyse beschreibt die Grenze des Android-
