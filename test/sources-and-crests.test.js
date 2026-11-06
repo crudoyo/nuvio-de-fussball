@@ -23,7 +23,7 @@ test('public alternative crests map matching club names, not unrelated clubs',()
   assert(m.team1.teamIconBackupUrl.endsWith('/124.png'));
   assert(m.team2.teamIconBackupUrl.endsWith('/999.png'));
 });
-test('when primary logo fails, the embedded card displays the secondary crest',async()=>{
+test('known club crest seed avoids a broken primary and still embeds raster logos',async()=>{
   const [m]=attachFallbackCrests([match],espnTeams);
   const calls=[];
   const fake=async(url)=>{
@@ -34,7 +34,7 @@ test('when primary logo fails, the embedded card displays the secondary crest',a
   };
   const art=await makeMatchPoster(m,{name:'1. Bundesliga'},'07.11., 15:30 Uhr','Demnächst',fake);
   assert(art.includes('data:image/png;base64,'));
-  assert(calls.some(s=>s.includes('badges.example')));
+  assert(!calls.some(s=>s.includes('badges.example')));
   assert(calls.some(s=>s.includes('a.espncdn.com')));
 });
 test('providers diagnostic does not display personal URL or token and flags catalog-less provider',async()=>{

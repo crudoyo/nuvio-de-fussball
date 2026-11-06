@@ -5,7 +5,8 @@
  */
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
-import { espnTeamsUrl, attachFallbackCrests } from './crests.js';
+import { espnTeamsUrl, attachFallbackCrests, curatedCrest } from './crests.js';
+import { badgeImageUrl } from './graphics.js';
 import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
   diagnoseDaddyFixture
@@ -14,7 +15,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.13';
+export const VERSION = '0.4.14';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -156,12 +157,18 @@ function status(m,now=Date.now()) {
   if(new Date(t).toLocaleDateString('sv-SE',{timeZone:'Europe/Berlin'})===new Date(now).toLocaleDateString('sv-SE',{timeZone:'Europe/Berlin'}))return 'Heute';
   return 'Demnächst';
 }
+function teamLogo(team) {
+  return curatedCrest(team?.teamName) || badgeImageUrl(team?.teamIconBackupUrl) ||
+    badgeImageUrl(team?.teamIconUrl) || null;
+}
 function meta(m,league,origin,prefix='') {
   const id=gameId(league,m), home=m.team1.teamName,away=m.team2.teamName;
   const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.svg?v=${VERSION}`;
   const score=m.matchIsFinished && m.matchResults?.length? m.matchResults.find(r=>r.resultTypeID===2)||m.matchResults.at(-1):null;
   const description=`${league.name} · ${dateLabel(m)} · ${status(m)}. ${home} gegen ${away}.`+(score?` Endstand: ${score.pointsTeam1}:${score.pointsTeam2}.`:'')+' Videostreams nur, wenn ein verbundenes Sport-Add-on diese Begegnung eindeutig zuordnet.';
-  return {id,type:'tv',name:`${home} – ${away}`,poster,background:poster,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:dateLabel(m),released:startTime(m)?.toISOString(),behaviorHints:{defaultVideoId:id}};
+  return {id,type:'tv',name:`${home} – ${away}`,poster,background:poster,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:dateLabel(m),released:startTime(m)?.toISOString(),
+    team1:{name:home,logo:teamLogo(m.team1)},team2:{name:away,logo:teamLogo(m.team2)},
+    behaviorHints:{defaultVideoId:id}};
 }
 function manifest(list) {
   return {id:'com.community.nuvio.defootball',version:VERSION,name:'Deutscher Fußball · Spielpläne',description:'Deutsche Fußballligen als einzelne Spielkataloge. OpenLigaDB + optionale Quellen aus bereits vorhandenen Sport-Add-ons.',types:['tv'],resources:[{name:'catalog',types:['tv']},{name:'meta',types:['tv'],idPrefixes:['defootball_']},{name:'stream',types:['tv'],idPrefixes:['defootball_']}],catalogs:list.map(l=>({type:'tv',id:catalogId(l.shortcut),name:`⚽ ${l.name}`})),behaviorHints:{configurable:true}};
