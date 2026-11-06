@@ -76,5 +76,5 @@ test('match metadata publishes team crest URLs to native Nuvio clients',async()=
   assert.equal(meta.team2.logo,'https://www.footylogos.com/dls/logo/rgba-v1/rot-weiss-essen.png');
   assert.equal(meta.team1.name,match.team1.teamName);
   assert.equal(meta.team2.name,match.team2.teamName);
-  assert.match(meta.poster,/\.png\?v=0\.4\.17$/);
+  assert.match(meta.poster,/\.png\?v=0\.4\.18$/);
 });

@@ -25,6 +25,8 @@ jobs:
         run: npm test
       - name: Verify all 20 live 3. Liga PNG crest URLs
         run: npm run check:crests
+      - name: Verify current Champions League club PNGs
+        run: npm run check:ucl-crests
       - name: Validate Cloudflare Workers build
         run: npx wrangler deploy --dry-run --outdir dist
       - name: Verify deployed version and report native availability

@@ -105,26 +105,23 @@ function badgeArt(name, url, x) {
   const label = escape(shortName(name));
   return badge + '<text x="' + (x+80) + '" y="255" font-family="Arial,sans-serif" font-size="' + (label.length>20?16:19) + '" fill="#fff" text-anchor="middle" font-weight="600">' + label + '</text>';
 }
+export async function teamBadgeData(team, fetcher = fetch) {
+  // Prefer known raster crests; fall back to independently provided team data.
+  const known=curatedCrest(team?.teamName);
+  if(known){
+    const data=await badgeData(known,fetcher);
+    if(data)return data;
+  }
+  // A dead primary must not delay the other alternative. Prefer the original
+  // league image if both succeed, without an extra team-list lookup here.
+  const options=[team?.teamIconUrl,team?.teamIconBackupUrl]
+    .filter((url,index,all)=>url && url!==known && all.indexOf(url)===index);
+  const images=await Promise.all(options.map(url=>badgeData(url,fetcher)));
+  return images.find(Boolean)||null;
+}
 export async function makeMatchPoster(match, competition, kickoffLabel, matchStatus, fetcher = fetch) {
   const home = match.team1?.teamName || 'Heim', away = match.team2?.teamName || 'Gast';
-  async function badge(team) {
-    // Static PNG badges supplied by Nuvio Live Sports cover many clubs missing
-    // from OpenLigaDB's SVG links, including lower divisions. Fall back to the
-    // original league data, then the independently matched ESPN logo.
-    const known=curatedCrest(team?.teamName);
-    if(known){
-      const data=await badgeData(known,fetcher);
-      if(data)return data;
-    }
-    // Neither a dead OpenLigaDB badge nor an ESPN timeout should block the
-    // other alternative. Fetch distinct sources in parallel and prefer the
-    // original official URL when both work.
-    const options=[team?.teamIconUrl,team?.teamIconBackupUrl]
-      .filter((url,index,all)=>url && url!==known && all.indexOf(url)===index);
-    const images=await Promise.all(options.map(url=>badgeData(url,fetcher)));
-    return images.find(Boolean)||null;
-  }
-  const [left, right] = await Promise.all([badge(match.team1),badge(match.team2)]);
+  const [left, right] = await Promise.all([teamBadgeData(match.team1,fetcher),teamBadgeData(match.team2,fetcher)]);
   return '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="405" viewBox="0 0 720 405">'
     + '<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#092a32"/><stop offset="1" stop-color="#173b46"/></linearGradient></defs>'
     + '<rect width="720" height="405" fill="url(#bg)"/>'
@@ -136,4 +133,28 @@ export async function makeMatchPoster(match, competition, kickoffLabel, matchSta
     + '<text x="360" y="326" font-size="22" fill="#fff" font-family="Arial,sans-serif" text-anchor="middle">' + escape(kickoffLabel) + '</text>'
     + '<text x="360" y="355" font-size="17" fill="#8fe2bb" font-family="Arial,sans-serif" text-anchor="middle">' + escape(matchStatus) + '</text>'
     + '</svg>';
+}
+
+/**
+ * Detail heroes crop landscape artwork to a portrait viewport (and may zoom).
+ * Keep both crests inside the central 440px of a 1280x720 image. Do not bake
+ * the catalog's competition/date/name labels into a backdrop: the app draws
+ * those itself and would enlarge or crop them along with the old poster.
+ */
+export async function makeMatchBackground(match, fetcher = fetch) {
+  const [left,right]=await Promise.all([
+    teamBadgeData(match.team1,fetcher),teamBadgeData(match.team2,fetcher)
+  ]);
+  function crest(name,data,x){
+    return data
+      ? '<image href="'+data+'" x="'+x+'" y="200" width="160" height="160" preserveAspectRatio="xMidYMid meet"/>'
+      : '<circle cx="'+(x+80)+'" cy="280" r="72" fill="#173d49" stroke="#73d7aa" stroke-opacity=".4"/>'
+        +'<text x="'+(x+80)+'" y="291" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="#e7f4ef" text-anchor="middle">'+escape(abbreviate(name))+'</text>';
+  }
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'
+    +'<defs><radialGradient id="glow"><stop stop-color="#244b53"/><stop offset="1" stop-color="#07151e"/></radialGradient></defs>'
+    +'<rect width="1280" height="720" fill="url(#glow)"/>'
+    +crest(match.team1?.teamName,left,420)+crest(match.team2?.teamName,right,700)
+    +'<text x="640" y="290" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#8fe2bb" fill-opacity=".75" text-anchor="middle">VS</text>'
+    +'</svg>';
 }

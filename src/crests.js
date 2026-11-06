@@ -54,13 +54,38 @@ const LOCAL_ALIASES={
   '1fckaiserslautern':'kaiserslautern',
   'fckaiserslautern':'kaiserslautern',
   'herthabsc':'herthaberlin',
-  'herthabscberlin':'herthaberlin'
+  'herthabscberlin':'herthaberlin',
+  // OpenLigaDB's German UEFA names differ from the international logo seed.
+  // Keep these explicit: e.g. Inter Mailand must never resolve to Inter Miami.
+  'aekathen':'aekathens',
+  'asrom':'asroma',
+  'fcbrugge':'clubbrugge',
+  'intermailand':'intermilan',
+  'internazionale':'intermilan',
+  'fcinternazionalemilano':'intermilan',
+  'villarrealcf':'villarreal',
+  'lilleosc':'lille',
+  'parisstgermain':'parissaintgermain',
+  'parissaintgermainfc':'parissaintgermain',
+  'sscnapoli':'napoli',
+  'galatasarayistanbul':'galatasaray',
+  'fenerbahcesk':'fenerbahce',
+  'fkbodoglimt':'bodo',
+  'bodoglimt':'bodo',
+  'manchesterunitedfc':'manchesterunited',
+  'como1907':'como',
+  'slaviaprag':'slaviaprague',
+  'slaviapraha':'slaviaprague',
+  'skslaviapraha':'slaviaprague',
+  'rclens':'lens',
+  'lask':'lasklinz',
+  'viking':'vikingfk'
 };
 const compactLogoKey=name=>String(name||'').toLowerCase().normalize('NFKD')
   .replace(/[\u0300-\u036f]/g,'').replace(/ä/g,'a').replace(/ö/g,'o')
-  .replace(/ü/g,'u').replace(/ß/g,'ss').replace(/[^a-z0-9]/g,'');
+  .replace(/ü/g,'u').replace(/ø/g,'o').replace(/ß/g,'ss').replace(/[^a-z0-9]/g,'');
 function candidatesForCrest(name){
-  const key=compactLogoKey(name),out=new Set([key]);
+  const key=compactLogoKey(name),out=new Set([LOCAL_ALIASES[key]||key,key]);
   // Preserve the full exact club name first to distinguish second teams.
   const bare=key.replace(/(?:frauen|women|damen|u2[013]|u19|u17|i{2}|2)$/,'');
   if(bare.length>5)out.add(bare);
@@ -122,9 +147,12 @@ export function readESPNTeamCrests(data) {
 }
 export function bestCrest(team,entries) {
   const variants=namesFor(team);
+  const key=compactLogoKey(team),canonical=LOCAL_ALIASES[key]||key;
   let winner='';
   for(const e of entries){
     const k=crestKey(e.name);
+    const entryKey=compactLogoKey(e.name);
+    if(canonical===(LOCAL_ALIASES[entryKey]||entryKey))return e.logo;
     if(variants.includes(k))return e.logo;
     // Avoid accidental collisions between unrelated club names.
     if(variants.some(x=>x.length>5 && (k.startsWith(x+' ')||x.startsWith(k+' '))))winner=e.logo;
