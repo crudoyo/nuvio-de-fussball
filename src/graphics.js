@@ -1,3 +1,4 @@
+import {curatedCrest} from './crests.js';
 /**
  * Branded landscape match cards for Nuvio, with embedded club badges.
  * The URLs are read from fixture providers; unknown or failed images fall back
@@ -107,8 +108,16 @@ function badgeArt(name, url, x) {
 export async function makeMatchPoster(match, competition, kickoffLabel, matchStatus, fetcher = fetch) {
   const home = match.team1?.teamName || 'Heim', away = match.team2?.teamName || 'Gast';
   async function badge(team) {
-    return await badgeData(team?.teamIconUrl, fetcher) ||
-      await badgeData(team?.teamIconBackupUrl, fetcher);
+    // Static PNG badges supplied by Nuvio Live Sports cover many clubs missing
+    // from OpenLigaDB's SVG links, including lower divisions. Fall back to the
+    // original league data, then the independently matched ESPN logo.
+    const candidates=[curatedCrest(team?.teamName),team?.teamIconUrl,
+      team?.teamIconBackupUrl];
+    for(const url of new Set(candidates.filter(Boolean))){
+      const data=await badgeData(url,fetcher);
+      if(data)return data;
+    }
+    return null;
   }
   const [left, right] = await Promise.all([badge(match.team1),badge(match.team2)]);
   return '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="405" viewBox="0 0 720 405">'
