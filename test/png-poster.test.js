@@ -28,7 +28,7 @@ test('all football catalog posters now advertise versioned PNG, not SVG',async()
   const result=await reply.json();
   assert.equal(reply.status,200);
   const [card]=result.metas;
-  assert.match(card.poster,/\/poster\/bl1\/62501\.png\?v=0\.4\.15$/);
+  assert.match(card.poster,/\/poster\/bl1\/62501\.png\?v=0\.4\.16$/);
   assert.equal(card.background,card.poster);
 });
 
