@@ -4,7 +4,7 @@
  * No direct scraping, DRM circumvention, torrent/P2P support or stream fabrication.
  */
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
-import { makeMatchPoster } from './graphics.js';
+import { makeMatchPoster, makeMatchBackground, teamBadgeData } from './graphics.js';
 import { espnTeamsUrl, attachFallbackCrests, curatedCrest } from './crests.js';
 import { badgeImageUrl, badgeData } from './graphics.js';
 import { THIRD_LIGA_CLUBS_2026, thirdLigaCrest } from './third-league-crests.js';
@@ -16,7 +16,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.17';
+export const VERSION = '0.4.18';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -165,9 +165,10 @@ function teamLogo(team) {
 function meta(m,league,origin,prefix='') {
   const id=gameId(league,m), home=m.team1.teamName,away=m.team2.teamName;
   const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.png?v=${VERSION}`;
+  const background=`${origin}${prefix}/background/${encodeURIComponent(league.shortcut)}/${m.matchID}.png?v=${VERSION}`;
   const score=m.matchIsFinished && m.matchResults?.length? m.matchResults.find(r=>r.resultTypeID===2)||m.matchResults.at(-1):null;
   const description=`${league.name} · ${dateLabel(m)} · ${status(m)}. ${home} gegen ${away}.`+(score?` Endstand: ${score.pointsTeam1}:${score.pointsTeam2}.`:'')+' Videostreams nur, wenn ein verbundenes Sport-Add-on diese Begegnung eindeutig zuordnet.';
-  return {id,type:'tv',name:`${home} – ${away}`,poster,background:poster,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:dateLabel(m),released:startTime(m)?.toISOString(),
+  return {id,type:'tv',name:`${home} – ${away}`,poster,background,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:dateLabel(m),released:startTime(m)?.toISOString(),
     team1:{name:home,logo:teamLogo(m.team1)},team2:{name:away,logo:teamLogo(m.team2)},
     behaviorHints:{defaultVideoId:id}};
 }
@@ -320,6 +321,17 @@ export async function handle(request,env={},fetcher=fetch) {
       return json({version:VERSION,season:2026,league:'3. Liga',ok:clubs.filter(x=>x.usable).length,
         total:clubs.length,clubs},200,0);
     }
+    if(pathname==='/debug/crests/ucl.json'){
+      const games=await fixtures({shortcut:'ucl'},env,fetcher,false);
+      const teams=[...new Map(games.flatMap(m=>[m.team1,m.team2])
+        .map(team=>[team.teamName,team])).values()];
+      const clubs=await Promise.all(teams.map(async team=>({
+        club:team.teamName,preferredImageUrl:teamLogo(team),
+        usable:Boolean(await teamBadgeData(team,fetcher))
+      })));
+      return json({version:VERSION,season:Number(env.SEASON)||seasonOf(),league:'Champions League',
+        ok:clubs.filter(x=>x.usable).length,total:clubs.length,clubs},200,0);
+    }
     if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
     if(pathname==='/debug/daddy-lookup.json'){
       const home=clean(url.searchParams.get('home')).slice(0,90);
@@ -366,22 +378,24 @@ export async function handle(request,env={},fetcher=fetch) {
         externalPlayerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
       },200,0);
     }
-    if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
+    if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/|\/background\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const list=await leagues(env,fetcher);
     if(pathname==='/manifest.json')return json(manifest(list),200,3600);
     const catalog=pathname.match(/^\/catalog\/tv\/([^/]+)\.json$/);
     if(catalog){const league=list.find(x=>catalogId(x.shortcut)===catalog[1]);if(!league)return json({metas:[]});const games=await fixtures(league,env,fetcher);return json({metas:selectUpcoming(games).map(m=>meta(m,league,origin,prefix))},200,120);}
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
     if(details){const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);const games=await fixtures(found.league,env,fetcher),game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix)});const response=json({streams:await resolveStreams(game,sources,fetcher,env)},200,0);response.headers.set('cache-control','no-store');return response;}
-    const image=pathname.match(/^\/poster\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
-    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[1].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);
+    const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
+    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[2].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);
       // Avoid a second, serial ESPN request in image paths. An 8s delay is
       // enough for NuvioTV's image loader to time out on the poster.
       const cache=typeof caches!=='undefined' && caches.default ? caches.default : null;
       const cacheKey=new Request(request.url);
       if(cache){const hit=await cache.match(cacheKey);if(hit)return hit;}
-      const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[2]);if(!game)return json({error:'Spiel nicht gefunden'},404);const svg=await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher);
-      if(image[3]==='svg')return new Response(svg,{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});
+      const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[3]);if(!game)return json({error:'Spiel nicht gefunden'},404);
+      const svg=image[1]==='background' ? await makeMatchBackground(game,fetcher) :
+        await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher);
+      if(image[4]==='svg')return new Response(svg,{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});
       const renderer=typeof env.__testPngRenderer==='function' ? env.__testPngRenderer :
         (await import('./poster-png.js')).renderPng;
       const png=await renderer(svg);

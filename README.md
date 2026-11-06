@@ -1,12 +1,12 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.17 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.18 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
 - Je Wettbewerb ein Katalog: Bundesliga, 2. Bundesliga, 3. Liga, DFB-Pokal, Frauen-Bundesliga, Frauen-Pokal, Supercup und automatisch erkannte deutsche Regional-, Ober- und Amateurligen.
 - **Neu:** UEFA Champions League (OpenLigaDB, Kürzel `ucl`), Europa League und Conference League (ESPN-Soccer-Spielplan-Adapter, ohne API-Schlüssel).
-- Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status; 24 Stunden zurück und 30 Tage voraus. Die Poster enthalten, soweit verfügbar, beide **Vereinswappen** direkt in der SVG-Datei und kurze Mannschaftsnamen.
+- Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status; 24 Stunden zurück und 30 Tage voraus. Die PNG-Poster enthalten, soweit verfügbar, beide **Vereinswappen** und kurze Mannschaftsnamen. Die Detailansicht erhält eine eigene PNG-Grafik mit beiden Wappen in der Bildmitte.
 - Konfigurationsseite `/configure` für bis zu sechs **exakte HTTPS-Manifest-URLs** aus zusätzlichen Sport-Add-ons (insbesondere die persönliche Nuvio-Live-Sports- oder PenguPlay-Live-TV-URL).
 - Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuvio.moaqeel6679.my.id`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Direkter DaddyLive-Spielplanadapter und dokumentierte externe HTML-Playerlinks. Begrenzte automatische Auflösung normaler öffentlicher HLS-Quellen; keine Player-Entschlüsselung und keine P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
@@ -15,7 +15,7 @@
 
 - **Noch kein Live-Test** der Streamzuordnung gegen die persönlichen Anbieter-Konfigurationen oder Fire TV. Nur eine erreichbare Schnittstelle mit Sport-Katalog, passenden Spielen und HTTP(S)-Direktstreams liefert Optionen. Manche Anbieter bieten nur Web-Player oder P2P, die hier nicht übernommen werden.
 - Dynamische unterklassige Ligen hängen von OpenLigaDB ab und können fehlen oder leere Kataloge enthalten. Die Core-Wettbewerbe sind selbst dann sichtbar, wenn OpenLigaDB dafür keine Daten liefert.
-- Die Poster werden als **SVG** mit eingebetteten PNG/JPEG/WebP/GIF-Vereinslogos erzeugt. Wenn ein Badge nicht abrufbar ist, erscheint ein Teamkürzel. Nicht jeder Nuvio-Player unterstützt SVG-Bilder; in diesem Fall bleiben Poster leer, aber Titel und Spieltexte funktionieren weiter.
+- Poster und Detailhintergründe werden im Worker aus SVG in **PNG** umgewandelt. Wenn ein Wappen aus keiner Quelle abrufbar ist, erscheint ein Teamkürzel. Die Platzierung der übrigen Detailansicht bestimmt der jeweilige Nuvio-Client.
 - `externalUrl`-Streams können Drittanbieterplayer öffnen, deren P2P-Verhalten dieses Add-on nicht kontrolliert. Prüfe die Rechte zur Wiedergabe der angebotenen Inhalte.
 - URLs mit Zugangstoken sollten nicht öffentlich geteilt werden; sie sind in der personalisierten Manifest-Adresse enthalten.
 
@@ -56,7 +56,10 @@ Veröffentlichen: `npx wrangler deploy` (Cloudflare-Login erforderlich).
 - `/catalog/tv/defootball_bl1.json` – Bundesliga-Spielkatalog
 - `/meta/tv/defootball_bl1_<MatchID>.json` – Begegnungsdetails
 - `/stream/tv/defootball_bl1_<MatchID>.json` – Streams, falls zugeordnet
-- `/poster/bl1/<MatchID>.svg` – Poster-SVG mit Vereinslogos, soweit verfügbar
+- `/poster/bl1/<MatchID>.png` – Spielkachel mit Vereinslogos
+- `/background/bl1/<MatchID>.png` – eigener Detailhintergrund mit mittig platzierten Wappen
+- `/poster/bl1/<MatchID>.svg` – SVG-Diagnose der Spielkachel
+- `/debug/crests/ucl.json` – tatsächlicher Bildabruf für alle Mannschaften im aktuellen Champions-League-Spielplan
 - `/health` – Status
 
 **Datenschutz / Disclaimer:** Kein offizielles Angebot von Nuvio, Stremio, DFB oder OpenLigaDB. Die Quelldienste und deren Zugriffsberechtigungen bleiben unabhängig. Dieses Projekt bietet keine unautorisierten Streamquellen und versucht nicht, Geoblocking, DRM oder CAPTCHA zu umgehen.
@@ -245,3 +248,11 @@ Die 18 eigenständigen Vereinswappen verwenden öffentlich verlinkbare transpare
 - Versionierte Posteradressen mit `v=0.4.17` vermeiden alte Grafiken aus dem Cache. Das Update ist erst nach dem Worker-Deployment und gegebenenfalls einem Add-on-Refresh in Nuvio sichtbar.
 
 Offizielle Saisonquelle: https://www.dfb.de/news/teilnehmerfeld-der-3-liga-steht-fest-havelse-rueckt-fuer-1860-nach
+
+## Champions-League-Wappen und Detailansicht (v0.4.18)
+
+OpenLigaDB verwendet unter anderem „Slavia Prag“, „Inter Mailand“ und „Villarreal CF“, während die vorhandenen ESPN-Logoquellen unter „Slavia Prague“, „Internazionale“ und „Villarreal“ geführt werden. Explizite Zuordnungen decken nun alle 36 Vereine des am 06.11.2026 abgerufenen Spielplans ab. LASK und Viking verwenden dabei die eindeutig zugeordneten ESPN-Fußballwappen. `npm run check:ucl-crests` prüft die jeweils aktuellen Spielplan-Mannschaften und lädt deren echte PNG-Dateien einschließlich MIME-, Größen-, Signatur- und Auflösungsprüfung. Quellen: [OpenLigaDB-Spielplan](https://api.openligadb.de/getmatchdata/ucl/2026), [ESPN-Teamübersicht](https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/teams?limit=150).
+
+Das Metadatenfeld `background` verweist auf ein eigenes **1280 × 720 PNG**. Bisher wurde hier die 720 × 405 Spielkachel wiederverwendet; beim Zuschneiden auf eine hohe Handy-Detailansicht blieben vor allem „VS“ und vergrößerte Textreste übrig. Im neuen Bild stehen beide Wappen innerhalb der zentralen 440 Pixel, ohne erneut eingebrannte Spiel-, Datums- oder Wettbewerbstexte. Die App zeigt diese Angaben bereits selbst. Die Katalogkachel bleibt ein separates Querformat. Als Referenz verwendet [Nuvios DetailHero](https://github.com/NuvioMedia/NuvioMobile/blob/cmp-rewrite/composeApp/src/commonMain/kotlin/com/nuvio/app/features/details/components/DetailHero.kt) `background` mit Center-Crop und zusätzlichem Zoom. Regressionstests prüfen beide tatsächlich gerasterten Wappen bei Hoch-, Quadrat- und Querformat-Zuschnitten mit 1,08-fachem Zoom.
+
+Poster und Hintergründe erhalten neue URLs mit `v=0.4.18`. Der Produktions-Smoke-Test prüft zusätzlich die vollständige Champions-League-Wappenabdeckung und einen echten Hintergrund-PNG-Abruf. Die Darstellung im konkret installierten Handy-/TV-Client bleibt separat am Gerät zu kontrollieren.
