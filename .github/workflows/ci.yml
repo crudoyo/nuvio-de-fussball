@@ -29,6 +29,8 @@ jobs:
         run: npm run check:ucl-crests
       - name: Validate Cloudflare Workers build
         run: npx wrangler deploy --dry-run --outdir dist
+      - name: Verify actual Worker runtime and entrypoint
+        run: node scripts/check-worker-runtime.mjs
       - name: Verify deployed version and report native availability
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:

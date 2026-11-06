@@ -10,12 +10,12 @@
 - Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status. Die Wochenübersichten der 1. Bundesliga und 3. Liga zeigen alle Spiele von Montag bis Sonntag, einschließlich englischer Wochen; andere Kataloge zeigen 24 Stunden zurück und 30 Tage voraus. Die PNG-Poster enthalten, soweit verfügbar, beide **Vereinswappen**, kurze Mannschaftsnamen und bei den Testligen den Wochentag. Die Detailansicht erhält eine eigene PNG-Grafik mit beiden Wappen in der Bildmitte.
 - Spielbeschreibungen zeigen verfügbare Statistiken: in den drei deutschen Profiligen Tabellenplatz, Punkte und Tore sowie die Form aus bis zu fünf beendeten Spielen desselben Wettbewerbs. Das gilt auch für die Beschreibung beim Markieren einer Katalogkachel. Beendete Partien nennen End- und gegebenenfalls Halbzeitstand.
 - Konfigurationsseite `/configure` für bis zu sechs **exakte HTTPS-Manifest-URLs** aus zusätzlichen Sport-Add-ons (insbesondere die persönliche Nuvio-Live-Sports- oder PenguPlay-Live-TV-URL).
-- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuviosports.xyz`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. Direkter DaddyLive-Spielplanadapter und dokumentierte externe HTML-Playerlinks. Begrenzte automatische Auflösung normaler öffentlicher HLS-Quellen; keine Player-Entschlüsselung und keine P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
+- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuviosports.xyz`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. DaddyLive ergänzt einen eigenen Spielplanadapter und für den geprüften aktuellen Player einen HLS-Endpunkt mit öffentlichen Playlist-Tokens und begrenzter PNG-/WebP-Medienverarbeitung. Externe HTML-Player bleiben gekennzeichnete Ersatzoptionen. Keine beliebige Skriptausführung, DRM-Verarbeitung oder P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
 
 ### Einschränkungen
 
-- **Noch kein Live-Test** der Streamzuordnung gegen die persönlichen Anbieter-Konfigurationen oder Fire TV. Nur eine erreichbare Schnittstelle mit Sport-Katalog, passenden Spielen und HTTP(S)-Direktstreams liefert Optionen. Manche Anbieter bieten nur Web-Player oder P2P, die hier nicht übernommen werden.
+- **Kein Gerätetest** der korrigierten Wiedergabe auf Nuvio oder Fire TV. Lokale Liveabrufe prüfen Playlist und ausgegebene MPEG-TS-Medien; persönliche Anbieter-Konfigurationen bleiben separat zu testen. Unterstützt werden die ausdrücklich geprüften Player-/Medienhosts, nicht jeder externe Web-Player.
 - Dynamische unterklassige Ligen hängen von OpenLigaDB ab und können fehlen oder leere Kataloge enthalten. Die Core-Wettbewerbe sind selbst dann sichtbar, wenn OpenLigaDB dafür keine Daten liefert.
 - Poster und Detailhintergründe werden im Worker aus SVG in **PNG** umgewandelt. Wenn ein Wappen aus keiner Quelle abrufbar ist, erscheint ein Teamkürzel. Die Platzierung der übrigen Detailansicht bestimmt der jeweilige Nuvio-Client.
 - `externalUrl`-Streams können Drittanbieterplayer öffnen, deren P2P-Verhalten dieses Add-on nicht kontrolliert. Prüfe die Rechte zur Wiedergabe der angebotenen Inhalte.
@@ -63,6 +63,8 @@ Veröffentlichen: `npx wrangler deploy` (Cloudflare-Login erforderlich).
 - Für die 3. Liga dieselben fünf Kataloge mit `bl3` statt `bl1`; maßgeblich ist Europe/Berlin
 - `/meta/tv/defootball_bl1_<MatchID>.json` – Begegnungsdetails
 - `/stream/tv/defootball_bl1_<MatchID>.json` – Streams, falls zugeordnet
+- `/daddy/live/<Sender-ID>.m3u8?sid=<Wiedergabesitzung>` – eigener HLS-Endpunkt; die Streamantwort erzeugt die Sitzungsadresse automatisch
+- `/daddy/resource/...` – vom HLS-Endpunkt erzeugte, begrenzte Playlist-/Medienadressen; keine frei wählbaren Zielhosts
 - `/poster/bl1/<MatchID>.png` – Spielkachel mit Vereinslogos
 - `/background/bl1/<MatchID>.png` – eigener Detailhintergrund mit mittig platzierten Wappen
 - `/poster/bl1/<MatchID>.svg` – SVG-Diagnose der Spielkachel

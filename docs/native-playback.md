@@ -1,5 +1,58 @@
 # Native DaddyLive-Wiedergabe: Untersuchung vom 04.11.2026
 
+## Eigener HLS-Adapter in Version 0.4.23
+
+`src/daddy-playback.js` ergänzt nun die eigene Wiedergabekette für den aktuell
+geprüften `dembed.st/premiumtv/daddy.php?id=<Sender>`-Player. Sie liest dessen
+explizite SRC-/EDGE-/CHANNEL-Konfiguration ohne Skriptausführung. Der eigene
+`/daddy/live/<Sender>.m3u8`-Endpunkt ruft die öffentliche Playlist-Token-API wie
+der Originalplayer auf, erneuert Tokens nach halber TTL und nach einmaligem
+Playlist-403 und schreibt Varianten, Renditions und Medienadressen um. Für die
+aus `_econfig` gelesene Assetrage-Konfiguration sind die dokumentierten
+CDN-Adressen auf HTTPS-Port 8443 gesondert zugelassen.
+
+`src/daddy-media.js` verarbeitet normale TS-/MP4-Daten sowie die geprüften
+PNG-/WebP-Container. PNG-Pixel mit `TIKTIKPX` werden als begrenztes RGB/RGBA-Bild
+mit Filtern 0–4 gelesen, der darin enthaltene Gzip-TS-Payload wird entpackt und
+auf TS-Paketkennungen geprüft. PNG-IEND mit angehängtem TS, WebP-EXIF,
+`TIKTIKRAW` und `TIKTIKTSGZ` sind ebenfalls unterstützt. HTTP-Ranges werden auf
+die ausgegebenen Medienbytes angewandt. Verschlüsselte Playlists werden
+weiterhin abgewiesen; es wird keine DRM-Verarbeitung ergänzt.
+
+Player, Token-API und Medienziele haben getrennte feste Host-/Pfadregeln;
+fremde Ziele, Zugangsdaten in URLs und unbekannte Ports werden verworfen.
+Antworten und entpackte Medien sind größenbegrenzt. Eine einzelne
+Wiedergabeanfrage hat höchstens 20 Netzabrufe und 20 Sekunden; das zusätzliche
+Zeitbudget ist für Medienabrufe bestimmt. Die bestehende Senderauflösung
+behält ihre sechs Sekunden und die Daddy-Domain-Fallback-Regeln. Medien-URLs
+bleiben kurzlebige Wiedergabedaten; die Quellenzuordnung bleibt die Sender-ID.
+
+Die heruntergeladenen Referenzen wurden vor Weiterarbeit nochmals geprüft:
+`DaddyLiveProvider.js` ist identisch mit der unten referenzierten Repository-
+Datei, die bereitgestellte `README.md` ist identisch mit `resolver/README.md`
+des separaten Streamed.pk-Resolvers. Dessen WASM-/Protobuf-Handshake betrifft
+Streamed.pk, nicht die hier geprüfte öffentliche Daddy-Playlist-Token-API.
+Der Daddy-Provider selbst bevorzugt normale TS-Quellen und überspringt
+bestimmte TikTok-Quellen. Die beim aktuellen Abruf tatsächlich angebotenen
+Player für Magenta Sport 303 (11) und DAZN1 DE (426) liefern dagegen
+PNG-Pixelcontainer. Beide gespeicherten Live-Segmente wurden lokal in gültige,
+auf 188 Bytes ausgerichtete MPEG-TS-Pakete umgewandelt. Auch der vollständige
+HLS-Endpunkt in der lokalen Cloudflare-Runtime lieferte für beide Sender HTTP
+200 und TS. Vorübergehende Netzfehler, Timeouts und HTTP 5xx erlauben einen
+erneuten Medienabruf innerhalb desselben Gesamtbudgets; HTTP 401/403 erlauben
+keinen solchen Medien-Retry. Die oben beschriebene öffentliche Playlist-Token-
+Erneuerung ist davon getrennt. Das ist kein Bild-/Tontest auf dem Nutzergerät.
+
+`src/index.js` exportiert für Cloudflare ausschließlich den Worker-Handler.
+Damit gelangen die benannten Node-Testhelfer aus `worker.js` nicht mehr in die
+Runtime-Exporttabelle. Der zusätzliche CI-Schritt `check-worker-runtime.mjs`
+startet die tatsächliche lokale Runtime, um solche Startfehler zu erkennen;
+ein reiner Wrangler-Dry-Run führt den Worker nicht aus.
+
+Die folgenden Abschnitte dokumentieren frühere Zustände. Aussagen über einen
+fehlenden eigenen Playlistproxy oder fehlende Containerverarbeitung beschreiben
+den Stand vor dieser Ergänzung.
+
 ## Korrektur der Quellenanbindung in Version 0.4.23 (06.11.2026)
 
 Die bisher automatisch verwendete Nuvio-Live-Sports-Instanz
