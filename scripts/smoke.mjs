@@ -1,13 +1,15 @@
 // Public production smoke check. Never accepts a personal /u/... manifest URL.
 import {readFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
-import {MATCHDAY_VIEWS,upcomingSunday,berlinDate} from '../src/matchdays.js';
+import {CALENDAR_VIEWS,weekWindow,berlinDate} from '../src/matchdays.js';
 const base=new URL(process.env.WORKER_SMOKE_URL);
 if(base.protocol!=='https:'||base.username||base.password||base.pathname!=='/'||base.search||base.hash)
   throw new Error('WORKER_SMOKE_URL must be a public HTTPS origin');
 const {version}=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+const verification=Date.now();
 async function json(path){
-  const response=await fetch(new URL(path,base),{signal:AbortSignal.timeout(12000),headers:{'Cache-Control':'no-cache'}});
+  const url=new URL(path,base);url.searchParams.set('smoke',String(verification));
+  const response=await fetch(url,{signal:AbortSignal.timeout(12000),headers:{'Cache-Control':'no-cache'}});
   if(!response.ok)throw new Error('HTTP '+response.status);
   return response.json();
 }
@@ -24,11 +26,15 @@ if(health.nativePlayback.nativeOnly!==false||health.nativePlayback.browserFallba
 const manifest=await json('/manifest.json?release='+version);
 if(manifest.version!==version)throw new Error('Manifest and health versions differ');
 console.log(JSON.stringify({version:health.version,nativePlayback:health.nativePlayback,manifestVersion:manifest.version}));
+const expectedCatalogs=['bl1','bl3'].flatMap(league=>CALENDAR_VIEWS.map(v=>`defootball_${league}${v.suffix}`));
+if(JSON.stringify(manifest.catalogs.slice(0,10).map(c=>c.id))!==JSON.stringify(expectedCatalogs))
+  throw new Error('Calendar catalog blocks are not in the expected order');
 for(const league of ['bl1','bl3']){
-  const rows=await Promise.all(MATCHDAY_VIEWS.map(async view=>{
+  const now=Date.now();
+  const rows=await Promise.all(CALENDAR_VIEWS.map(async view=>{
     const id=`defootball_${league}${view.suffix}`;
     if(!manifest.catalogs.some(c=>c.id===id&&c.name.endsWith(' · '+view.label)))
-      throw new Error('Missing matchday catalog '+id);
+      throw new Error('Missing calendar catalog '+id);
     const catalog=await json('/catalog/tv/'+id+'.json?release='+version);
     if(!Array.isArray(catalog.metas))throw new Error('Invalid catalog '+id);
     const ids=catalog.metas.map(m=>m.id);
@@ -36,20 +42,24 @@ for(const league of ['bl1','bl3']){
       throw new Error('Invalid canonical game IDs in '+id);
     const dates=catalog.metas.map(m=>Date.parse(m.released)).filter(Number.isFinite);
     if(dates.some((d,i)=>i&&d<dates[i-1]))throw new Error('Unsorted kickoffs in '+id);
-    if(view.view==='sunday'){
-      if(catalog.metas.some(m=>!m.released||berlinDate(m.released)!==upcomingSunday()))
-        throw new Error('Wrong Berlin Sunday in '+id);
-    }else if(catalog.metas.some(m=>!m.matchday?.number||m.matchday.number!==catalog.metas[0].matchday?.number))
-      throw new Error('Mixed/missing official rounds in '+id);
+    const {start,end}=weekWindow(now,view.offset||0);
+    if(catalog.metas.some(m=>{
+      if(!m.released||!Number.isFinite(Date.parse(m.released)))return true;
+      const day=berlinDate(m.released);
+      return day<start||day>=end||view.weekday!==undefined&&
+        new Date(day+'T12:00:00Z').getUTCDay()!==view.weekday;
+    }))throw new Error('Wrong Berlin week/weekday in '+id);
     return catalog.metas;
   }));
-  const [next,following,sunday]=rows;
-  if(!next.length)throw new Error('No next matchday in '+league);
-  if(following.length&&following[0].matchday.number<=next[0].matchday.number)
-    throw new Error('Following round does not follow next round in '+league);
-  console.log(JSON.stringify({league,nextMatchday:next[0].matchday.number,next:next.length,
-    followingMatchday:following[0]?.matchday.number,following:following.length,
-    sunday:upcomingSunday(),sundayGames:sunday.length}));
+  const [current,friday,saturday,sunday,following]=rows;
+  for(const [index,weekday] of [[1,5],[2,6],[3,0]]){
+    const expected=current.filter(m=>new Date(berlinDate(m.released)+'T12:00:00Z').getUTCDay()===weekday);
+    if(JSON.stringify(rows[index].map(m=>m.id))!==JSON.stringify(expected.map(m=>m.id)))
+      throw new Error('Weekday row differs from current week in '+league);
+  }
+  console.log(JSON.stringify({league,currentWeek:weekWindow(now),current:current.length,
+    friday:friday.length,saturday:saturday.length,sunday:sunday.length,
+    followingWeek:weekWindow(now,1),following:following.length}));
 }
 // Validate the real Cloudflare -> logo CDN -> PNG embedding path, not only GitHub's network.
 const crests=await json('/debug/crests/bl3.json?release='+version);

@@ -7,7 +7,7 @@ import {handle} from '../src/worker.js';
 const pngSignature=Uint8Array.of(137,80,78,71,13,10,26,10);
 const fixture={
   matchID:62501,
-  matchDateTimeUTC:new Date(Date.now()+3600000).toISOString(),
+  matchDateTimeUTC:new Date().toISOString(),
   group:{groupOrderID:9,groupName:'9. Spieltag'},
   team1:{teamName:'FC Bayern München'},
   team2:{teamName:'Borussia Dortmund'}
@@ -29,8 +29,8 @@ test('all football catalog posters now advertise versioned PNG, not SVG',async()
   const result=await reply.json();
   assert.equal(reply.status,200);
   const [card]=result.metas;
-  assert.match(card.poster,/\/poster\/bl1\/62501\.png\?v=0\.4\.19$/);
-  assert.match(card.background,/\/background\/bl1\/62501\.png\?v=0\.4\.19$/);
+  assert.match(card.poster,/\/poster\/bl1\/62501\.png\?v=0\.4\.20$/);
+  assert.match(card.background,/\/background\/bl1\/62501\.png\?v=0\.4\.20$/);
 });
 
 test('poster PNG endpoint emits raster Content-Type and supports SVG compatibility',async()=>{
