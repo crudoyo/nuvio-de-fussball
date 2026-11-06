@@ -188,6 +188,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
     return {status,stream:null,checks};
   }catch(error){
     if(signal?.aborted)throw signal.reason;
+    checks.failure=String(error.message||error.name).replace(/https?:\/\/\S+/g,'[url]').replace(/[^\x20-\x7e]/g,'').slice(0,130);
     const codes=new Set(['empty_response','response_too_large','access_denied','redirect_not_supported',
       'upstream_http_error','session_required','playlist_loop','unsupported_manifest','encrypted_playlist',
       'empty_playlist','session_media_address','unsupported_segment_container','playlist_depth_limit','request_limit','invalid_playlist_token']);

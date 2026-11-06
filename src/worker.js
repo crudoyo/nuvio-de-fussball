@@ -447,7 +447,8 @@ export async function handle(request,env={},fetcher=fetch) {
       if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
       const nativeStatuses=[];
       const streams=await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin,
-        onNativeDiagnostic:(channel,result)=>nativeStatuses.push(channel+':'+result.status)});
+        onNativeDiagnostic:(channel,result)=>nativeStatuses.push(channel+':'+result.status+
+          (result.checks?.failure?':'+result.checks.failure:''))});
       const response=json({streams},200,0);
       response.headers.set('x-daddy-resolution',nativeStatuses.join(',')||'none');
       response.headers.set('cache-control','no-store');return response;
