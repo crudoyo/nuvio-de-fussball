@@ -1,6 +1,6 @@
 {
   "name": "nuvio-de-fussball",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,5 +12,9 @@
   "devDependencies": {
     "wrangler": "^4.68.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2",
+    "@fontsource/roboto": "^5.2.8"
+  }
 }
