@@ -20,7 +20,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.22';
+export const VERSION = '0.4.23';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -29,7 +29,7 @@ const BUILTIN_MANIFESTS = [
   'https://sports.highfly.to/manifest.json',
   'https://sportsfree.highfly.to/manifest.json',
   'https://sportsfree-us2.highfly.to/manifest.json',
-  'https://nuvio.moaqeel6679.my.id/manifest.json'
+  'https://nuviosports.xyz/manifest.json'
 ];
 function streamSources(personal = []) {
   return safeUrls([...personal, ...BUILTIN_MANIFESTS]);
@@ -218,7 +218,8 @@ function manifest(list) {
 const simplify=s=>clean(s).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
 const aliases=[[/\brot weiss essen\b|\brw essen\b|\brwe\b/g,'essen'],[/\bbayern munchen\b|\bbayern munich\b/g,'bayern'],[/\bborussia dortmund\b|\bbvb\b/g,'dortmund'],[/\bborussia monchengladbach\b|\bgladbach\b/g,'monchengladbach'],[/\bkoln\b|\bcologne\b/g,'koln'],[/\bfortuna dusseldorf\b/g,'dusseldorf'],[/\brb leipzig\b/g,'leipzig'],[/\bwerder bremen\b/g,'bremen']];
 function normalize(x) { let s=simplify(x);for(const [re,to]of aliases)s=s.replace(re,to);return s; }
-const common=new Set('fc sv sc vfl vfb bsc tsv fsv ssv club e v ev football soccer the vs live sport match 1 2 04 05 06'.split(' '));
+// Shared competition/gender labels are not evidence of either club's identity.
+const common=new Set('fc sv sc vfl vfb bsc tsv fsv ssv club e v ev football soccer the vs live sport match frauen women womens woman ladies 1 2 04 05 06'.split(' '));
 const needles=x=>[...new Set(normalize(x).split(' ').filter(w=>w.length>3&&!common.has(w)))].sort((a,b)=>b.length-a.length).slice(0,2);
 export function matchScore(fixture,event) {
   const s=normalize([event.name,event.title,event.description].filter(Boolean).join(' '));
@@ -297,7 +298,7 @@ export async function diagnoseSources(personal=[], fetcher=fetch, env={},options
     const id=url.includes('sports.highfly.to')?'Sports Streams (Hauptserver)':
       url.includes('sportsfree.highfly.to')?'Sports Streams (Mirror 1)':
       url.includes('sportsfree-us2.highfly.to')?'Sports Streams (Mirror 2)':
-      url.includes('nuvio.moaqeel6679.my.id')?'Nuvio Live Sports':
+      ['nuviosports.xyz','nuvio.moaqeel6679.my.id'].includes(new URL(url).hostname)?'Nuvio Live Sports':
       url.includes('pengu.uk')?'PenguPlay':'Persönlicher Anbieter '+(i+1);
     try {
       const manifest=await loadJSON(url,300,fetcher);

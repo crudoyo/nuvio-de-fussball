@@ -1,5 +1,34 @@
 # Native DaddyLive-Wiedergabe: Untersuchung vom 04.11.2026
 
+## Korrektur der Quellenanbindung in Version 0.4.23 (06.11.2026)
+
+Die bisher automatisch verwendete Nuvio-Live-Sports-Instanz
+`nuvio.moaqeel6679.my.id` liefert HTTP 530. Der Entwickler nennt in seiner
+[aktualisierten Ankündigung](https://www.reddit.com/r/nuvioaddons/comments/1wfexs3/update_the_nuvio_live_sports_public_instance_is/)
+`https://nuviosports.xyz` als neue Adresse. Ihr Manifest war sowohl lokal als
+auch über die Quellen-Diagnose des veröffentlichten Cloudflare-Workers
+erreichbar. Die automatische Quelle verwendet jetzt diese Adresse.
+
+Für FC Bayern München Frauen gegen SV Werder Bremen Frauen am 06.11.2026,
+17:30 UTC (OpenLigaDB-Spiel 85776), liefert diese Instanz unter anderem native
+DaddyLive-Optionen für Magenta Sport 303 und DAZN1 DE. Der lokale Liveabruf
+des korrigierten Add-ons übernimmt beide Medienadressen sowie die vom Anbieter
+gelieferten Header und `notWebReady: false` unverändert. Es werden weiterhin
+die normalen Katalog-/Stream-Endpunkte verwendet, keine privaten Resolverrouten.
+Die Medienaufbereitung übernimmt der ursprüngliche Anbieter.
+
+Der Mannschaftsabgleich wertet gemeinsame Wörter wie `Frauen` und `Women`
+nicht mehr als Vereinsnamen. Zuvor konnte der gemeinsame Zusatz auf beiden
+Seiten genügen und Sender fremder Frauenbegegnungen beisteuern. Regressionstests
+prüfen beide Vereinsidentitäten, die aktuelle Standardquelle und die unveränderte
+Weitergabe der nativen Streamdaten.
+
+Die Nutzerbilder zeigen native Wiedergabe im ursprünglichen Nuvio-Live-Sports-
+Add-on. Das ist kein Gerätetest unseres korrigierten Add-ons. Ein erreichbares
+Manifest und zurückgegebene Direktstreams belegen ebenfalls keine vollständige
+Bild-/Tonwiedergabe auf dem Zielgerät. Der unten beschriebene begrenzte direkte
+DaddyLive-Resolver erhält durch diese Änderung keinen neuen Spezialtransport.
+
 ## Ergänzung für Version 0.4.6
 
 Die nachfolgende ursprüngliche Analyse beschreibt die Grenze des Android-
