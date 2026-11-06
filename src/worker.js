@@ -15,7 +15,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.14';
+export const VERSION = '0.4.15';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -163,7 +163,7 @@ function teamLogo(team) {
 }
 function meta(m,league,origin,prefix='') {
   const id=gameId(league,m), home=m.team1.teamName,away=m.team2.teamName;
-  const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.svg?v=${VERSION}`;
+  const poster=`${origin}${prefix}/poster/${encodeURIComponent(league.shortcut)}/${m.matchID}.png?v=${VERSION}`;
   const score=m.matchIsFinished && m.matchResults?.length? m.matchResults.find(r=>r.resultTypeID===2)||m.matchResults.at(-1):null;
   const description=`${league.name} · ${dateLabel(m)} · ${status(m)}. ${home} gegen ${away}.`+(score?` Endstand: ${score.pointsTeam1}:${score.pointsTeam2}.`:'')+' Videostreams nur, wenn ein verbundenes Sport-Add-on diese Begegnung eindeutig zuordnet.';
   return {id,type:'tv',name:`${home} – ${away}`,poster,background:poster,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:dateLabel(m),released:startTime(m)?.toISOString(),
@@ -361,8 +361,13 @@ export async function handle(request,env={},fetcher=fetch) {
     if(catalog){const league=list.find(x=>catalogId(x.shortcut)===catalog[1]);if(!league)return json({metas:[]});const games=await fixtures(league,env,fetcher);return json({metas:selectUpcoming(games).map(m=>meta(m,league,origin,prefix))},200,120);}
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
     if(details){const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);const games=await fixtures(found.league,env,fetcher),game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix)});const response=json({streams:await resolveStreams(game,sources,fetcher,env)},200,0);response.headers.set('cache-control','no-store');return response;}
-    const image=pathname.match(/^\/poster\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.svg$/);
-    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[1].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);const games=await fixtures(league,env,fetcher);const game=games.find(x=>String(x.matchID)===image[2]);if(!game)return json({error:'Spiel nicht gefunden'},404);return new Response(await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher),{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});}
+    const image=pathname.match(/^\/poster\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
+    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[1].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);const games=await fixtures(league,env,fetcher);const game=games.find(x=>String(x.matchID)===image[2]);if(!game)return json({error:'Spiel nicht gefunden'},404);const svg=await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher);
+      if(image[3]==='svg')return new Response(svg,{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});
+      const renderer=typeof env.__testPngRenderer==='function' ? env.__testPngRenderer :
+        (await import('./poster-png.js')).renderPng;
+      const png=await renderer(svg);
+      return new Response(png,{headers:{'content-type':'image/png',...corsHeaders(1800)}});}
     return json({error:'Nicht gefunden'},404);
   }catch(err){return json({error:'Anfrage fehlgeschlagen',detail:String(err.message||err).slice(0,130)},400,20);}
 }
