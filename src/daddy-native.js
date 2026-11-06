@@ -199,6 +199,7 @@ export async function automaticDaddyStreams(game,events,matchScore,env,fetcher,o
   const channels=[...new Map(matchDaddyEvents(game,events,matchScore).flatMap(e=>e.channels).map(c=>[c.id,c])).values()].slice(0,2);
   const results=await Promise.all(channels.map(async channel=>{
     const result=await resolveDaddyChannel(channel.id,fetcher,options);
+    options.onDiagnostic?.(channel.id,result);
     if(result.stream&&result.stream.url.includes('/daddy/live/'))result.stream.name='DaddyLive HLS · '+channel.name;
     return result;
   }));

@@ -128,3 +128,20 @@ test('the default source uses the announced Nuvio Live Sports domain and keeps i
   const report=await diagnoseSources([],mock,{});
   assert(report.some(p=>p.name==='Nuvio Live Sports'&&p.reachable&&p.hasStreamResource));
 });
+
+test('failed addon responses release their bodies before native playback requests continue',async()=>{
+  const rejected=[],cancelled=[];
+  const mock=async url=>{
+    if(String(url).endsWith('/manifest.json')){
+      rejected.push(String(url));
+      return new Response(new ReadableStream({
+        start(controller){controller.enqueue(new TextEncoder().encode('Denied'));},
+        cancel(){cancelled.push(String(url));}
+      }),{status:403});
+    }
+    return new Response('',{status:404});
+  };
+  await diagnoseSources([],mock,{});
+  assert(rejected.length>=3); // Other manifests may already be cached.
+  assert.deepEqual(cancelled.sort(),rejected.sort());
+});

@@ -1,5 +1,14 @@
 # Native DaddyLive-Wiedergabe: Untersuchung vom 04.11.2026
 
+## Übergabe an die Streamliste in Version 0.4.24
+
+Fehlgeschlagene Add-on-Antworten werden vor dem Verwerfen explizit geschlossen.
+Das verhindert, dass abgewiesene Quellen die begrenzten ausgehenden Worker-
+Verbindungen während der parallelen nativen Auflösung offen halten. Ein
+Regressionstest prüft das Schließen der Antwortkörper. Die Streamantwort
+nennt zusätzlich im Header `x-daddy-resolution` die Sender-ID und den
+Auflösungsstatus, ohne Medienadressen oder Tokens auszugeben.
+
 ## Eigener HLS-Adapter in Version 0.4.23
 
 `src/daddy-playback.js` ergänzt nun die eigene Wiedergabekette für den aktuell

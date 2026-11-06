@@ -21,7 +21,7 @@ import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
-export const VERSION = '0.4.23';
+export const VERSION = '0.4.24';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -124,7 +124,11 @@ async function loadJSON(url, ttl, fetcher=fetch) {
       if (hit) { const value=await hit.json(); memoryCache.set(key,{value,until:Date.now()+60_000}); return value; }
     }
     const res=await fetcher(key,{headers,signal:AbortSignal.timeout(8500),redirect:'manual'});
-    if (!res.ok) throw new Error(`Datenquelle HTTP ${res.status}`);
+    if (!res.ok) {
+      // Release Cloudflare's limited outgoing connections even for denied sources.
+      await res.body?.cancel().catch(()=>{});
+      throw new Error(`Datenquelle HTTP ${res.status}`);
+    }
     const value=await res.json();
     memoryCache.set(key,{value,until:Date.now()+ttl*1000});
     if (cache) {
@@ -239,7 +243,7 @@ function isDirect(s, allowExternal){
   if (!s || typeof s !== 'object' || s.infoHash || s.fileIdx!==undefined || s.sources?.length)return false;
   return playbackUrl(s.url)||(allowExternal&&playbackUrl(s.externalUrl));
 }
-export async function resolveStreams(game, sources, fetcher=fetch, env={},signal,{playbackOrigin}={}) {
+export async function resolveStreams(game, sources, fetcher=fetch, env={},signal,{playbackOrigin,onNativeDiagnostic}={}) {
   const nativeOnly=String(env.NATIVE_ONLY||'').toLowerCase()==='true';
   // Independent providers are queried concurrently so an unavailable one
   // does not block the user's other stream options.
@@ -280,7 +284,7 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={},signal
     const configured=nativeMappedStreams(game,daddy.events,matchScore,env);
     const [mapped,automatic]=await Promise.all([
       String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'?verifiedNativeStreams(configured,fetcher):configured,
-      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin,playbackOrigin})
+      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin,playbackOrigin,onDiagnostic:onNativeDiagnostic})
     ]);
     return [...mapped,...automatic];
   });
@@ -441,7 +445,11 @@ export async function handle(request,env={},fetcher=fetch) {
         details[1]==='meta'?standings(found.league,env,fetcher):Promise.resolve([])]);
       const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
       if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
-      const response=json({streams:await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin})},200,0);
+      const nativeStatuses=[];
+      const streams=await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin,
+        onNativeDiagnostic:(channel,result)=>nativeStatuses.push(channel+':'+result.status)});
+      const response=json({streams},200,0);
+      response.headers.set('x-daddy-resolution',nativeStatuses.join(',')||'none');
       response.headers.set('cache-control','no-store');return response;
     }
     const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
