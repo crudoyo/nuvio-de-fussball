@@ -5,16 +5,18 @@
  */
 const TYPES = new Set(['tv','sport','sports','movie','other']);
 const FOOTBALL = /football|soccer|fu(?:ss|ß)ball|bundesliga|dfb|uefa/i;
-const EVENT = /sport|live|event|match|today|upcoming|schedule/i;
+const EVENT = /\b(?:live|events?|matches|today|upcoming|schedule)\b/i;
+const OTHER_SPORT = /american[\s_-]*football|basketball|cricket|motorsport|motor[\s_-]*sports?|baseball|hockey|rugby|tennis|golf|mma|boxing|darts|college|cycling|\bnfl\b|\bnba\b|\bnhl\b|\bufc\b/i;
 const UNRELATED = /replay|highlight|network|24.?7|channel|favorite|favourite|teams/i;
 const WEB = /^https?:\/\//i;
 
 function rankCatalog(c) {
   if (!c || !TYPES.has(c.type) || typeof c.id !== 'string') return -1;
   const label = `${c.id} ${c.name || ''}`;
-  if (UNRELATED.test(label)) return -1;
+  if (UNRELATED.test(label)||OTHER_SPORT.test(label)) return -1;
   if (FOOTBALL.test(label)) return 100;
-  if (EVENT.test(label) || c.type === 'sport' || c.type === 'sports') return 50;
+  if (EVENT.test(label.replace(/[_-]/g,' '))) return 50;
+  if (['sport','sports'].includes(c.type)&&(!c.name||/^sports?$/i.test(c.name))) return 20;
   return -1;
 }
 
@@ -28,14 +30,15 @@ export function sportsCatalogRequests(manifest, game) {
     .map((c, index) => ({c, index, score:rankCatalog(c)}))
     .filter(x => x.score >= 0)
     .sort((a,b) => b.score-a.score || a.index-b.index)
-    .slice(0,12);
+    // Leave enough of the Worker's 50-request budget for both Daddy players.
+    .slice(0,3);
   const requests = [];
   let searched = 0;
   for (const {c,score} of catalogs) {
     const prefix = `catalog/${encodeURIComponent(c.type)}/${encodeURIComponent(c.id)}`;
     requests.push({path:prefix+'.json', type:c.type, catalog:c.id});
     if (score !== 100 || !Array.isArray(c.extra) ||
-        !c.extra.some(e => e && e.name === 'search') || searched >= 2) continue;
+        !c.extra.some(e => e && e.name === 'search') || searched >= 1) continue;
     searched++;
     for (const name of [game?.team1?.teamName,game?.team2?.teamName]) {
       if (typeof name === 'string' && name.trim()) {

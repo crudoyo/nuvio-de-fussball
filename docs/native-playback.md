@@ -1,5 +1,17 @@
 # Native DaddyLive-Wiedergabe: Untersuchung vom 04.11.2026
 
+## Worker-Abrufbudget in Version 0.4.25
+
+Die veröffentlichte gemeinsame Streamabfrage erreichte Cloudflares Limit von
+50 Subrequests, obwohl die einzelnen HLS-Endpunkte funktionierten. Die
+automatische Suche begrenzt sich deshalb auf höchstens drei relevante
+Fußball-/Live-/Programmkataloge und höchstens zwei Suchabfragen im ersten
+Fußballkatalog. Andere Sportarten, insbesondere American Football, werden
+nicht als Fußball behandelt. Fertige Streamantworten werden frisch geladen,
+ohne zusätzliche Cache-API-Aufrufe oder Wiederverwendung alter Medienadressen.
+Ein Regressionstest zählt Fetch- und Cache-Aufrufe der gemeinsamen Abfrage
+einschließlich zweier Daddy-Sender gegen ein simuliertes 50-Request-Limit.
+
 ## Übergabe an die Streamliste in Version 0.4.24
 
 Fehlgeschlagene Add-on-Antworten werden vor dem Verwerfen explizit geschlossen.

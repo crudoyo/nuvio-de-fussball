@@ -21,7 +21,7 @@ import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
-export const VERSION = '0.4.24';
+export const VERSION = '0.4.25';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -112,12 +112,12 @@ export function discoverLeagues(rows = [], extras='') {
     a.name.localeCompare(b.name,'de'));
 }
 async function loadJSON(url, ttl, fetcher=fetch) {
-  const key=String(url), old=memoryCache.get(key);
+  const cacheable=ttl>0,key=String(url),old=cacheable?memoryCache.get(key):null;
   if (old?.until > Date.now()) return old.value;
   if (old?.pending) return old.pending;
   const pending=(async()=>{
     const headers={accept:'application/json'};
-    const cache=typeof caches !== 'undefined' && caches.default ? caches.default : null;
+    const cache=cacheable&&typeof caches !== 'undefined' && caches.default ? caches.default : null;
     const req=new Request(key,{headers});
     if (cache) {
       const hit=await cache.match(req);
@@ -130,14 +130,14 @@ async function loadJSON(url, ttl, fetcher=fetch) {
       throw new Error(`Datenquelle HTTP ${res.status}`);
     }
     const value=await res.json();
-    memoryCache.set(key,{value,until:Date.now()+ttl*1000});
+    if(cacheable)memoryCache.set(key,{value,until:Date.now()+ttl*1000});
     if (cache) {
       const reply=new Response(JSON.stringify(value),{headers:{'content-type':'application/json','cache-control':`public,max-age=${cacheTTL(ttl)}`}});
       await cache.put(req,reply);
     }
     return value;
   })().catch(e=>{ if(old?.value) return old.value; throw e; }).finally(()=>{ const cur=memoryCache.get(key); if(cur?.pending) memoryCache.delete(key); });
-  memoryCache.set(key,{...old,pending});
+  if(cacheable)memoryCache.set(key,{...old,pending});
   return pending;
 }
 async function leagues(env, fetcher) {
@@ -268,7 +268,7 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={},signal
       .sort((a,b)=>b.score-a.score).slice(0,4);
     const variants=await Promise.allSettled(matches.map(async({m})=>{
       const result=await loadJSON(addonPath(source,
-        'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),30,fetcher);
+        'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),0,fetcher);
       return (Array.isArray(result.streams)?result.streams:[])
         .map(s=>forwardSportsStream(s,source,addon.name,!nativeOnly))
         .filter(Boolean).slice(0,12);

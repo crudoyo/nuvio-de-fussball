@@ -27,6 +27,15 @@ test('searches advertised football catalogs, not replay or TV network hubs',()=>
   assert(requests.some(r=>r.path.endsWith('/search=Borussia%20Dortmund.json')));
   assert(requests.some(r=>r.catalog==='nuvio_sports_live'));
   assert(!requests.some(r=>/replay|networks|movies/.test(r.catalog)));
+  const crowded=sportsCatalogRequests({catalogs:[
+    {type:'tv',id:'nuvio_sports_football',name:'Soccer',extra:[{name:'search'}]},
+    ...['american_football','basketball','cricket','motorsport','hockey','rugby','golf','tennis'].map(id=>
+      ({type:'tv',id:'nuvio_sports_'+id,name:id,extra:[{name:'search'}]})),
+    {type:'tv',id:'nuvio_sports_live',name:'Live Now'},
+    {type:'tv',id:'nuvio_sports_upcoming',name:'Upcoming'}
+  ]},game);
+  assert.equal(crowded.length,5);
+  assert.deepEqual([...new Set(crowded.map(r=>r.catalog))],['nuvio_sports_football','nuvio_sports_live','nuvio_sports_upcoming']);
 });
 
 test('forwards the exact Nuvio Live Sports player headers and notWebReady=false',()=>{
