@@ -45,7 +45,7 @@ test('abbreviated month dates in actual DaddyLive headings parse as GMT',()=>{
   assert.equal(parseUkScheduleDate('Wednesday 04th Nov 2026 - Schedule Time UK GMT','19:45'),
     '2026-11-04T19:45:00.000Z');
 });
-test('stale 2025 JSON falls back to fresh current homepage events',async()=>{
+test('fresh homepage is preferred without waiting for the obsolete JSON feeds',async()=>{
   const older={'Thursday 20th March 2025 - Schedule Time UK GMT':{
     Soccer:[{time:'23:00',event:'Paraguay vs Chile',channels:[{channel_id:'555'}]}]
   }};
@@ -54,14 +54,15 @@ test('stale 2025 JSON falls back to fresh current homepage events',async()=>{
     const u=String(url);calls.push(u);
     assert.equal(options.redirect,'manual');
     if(u.includes('/schedule/schedule-generated.json'))return asJson(older);
-    if(u==='https://thedaddy.pk/')return asText(site);
+    if(u==='https://thedaddy.li/')return asText(site);
     return asText('Not found',404);
   });
   assert.equal(result.reachable,true);
   assert.equal(result.source,'DaddyLive aktuelle Webseite');
   assert.equal(result.footballEvents,2);
-  assert(result.attempts.slice(0,2).every(x=>x.reason==='Stale schedule (2025-03-20)'));
-  assert(calls.includes('https://thedaddy.pk/'));
+  assert.deepEqual(result.attempts,[]);
+  assert(!calls.some(url=>url.includes('/schedule/')));
+  assert(calls.includes('https://thedaddy.li/'));
 });
 test('a stale JSON feed without an accessible homepage does not claim availability',async()=>{
   const older={'Thursday 20th March 2025 - Schedule Time UK GMT':{
@@ -74,7 +75,8 @@ test('a stale JSON feed without an accessible homepage does not claim availabili
   assert.equal(result.reachable,false);
   assert.equal(result.footballEvents,0);
   assert.equal(result.attempts.length,3);
-  assert.equal(result.attempts[2].reason,'HTTP 403');
+  assert.equal(result.attempts[0].reason,'HTTP 403');
+  assert(result.attempts.slice(1).every(x=>x.reason==='Stale schedule (2025-03-20)'));
 });
 test('HTML without schedule markup is not treated as valid data',()=>{
   assert.equal(parseDaddyHomepage('<html><body>Login required</body></html>'),null);

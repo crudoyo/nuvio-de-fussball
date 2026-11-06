@@ -4,11 +4,12 @@
 import {daddyPlayerUrl,matchDaddyEvents} from './daddylive.js';
 import {publicMediaUrl,publicResourceUrl,nativeStreamRecord} from './native-streams.js';
 import {manifestKind} from './manifest-check.js';
-const HOSTS=new Set(['thedaddy.pk','www.thedaddy.pk','dembed.st','ksohls.ru',
+import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyChannelPage,daddyRequestContext,withDaddyFallback,withDaddyAbort} from './daddy-domains.js';
+const HOSTS=new Set(['dembed.st','ksohls.ru',
   'www.ksohls.ru','tossequip.net','api.cdnlivetv.tv','out-3.welovetocare.shop']);
 const SPECIAL=new Set(['dembed.st','ksohls.ru','www.ksohls.ru']);
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
-const fail=code=>{throw new Error(code);};
+const fail=(code,status)=>{const error=new Error(code);error.status=status;throw error;};
 const decode=s=>s.replace(/&amp;/g,'&').replace(/&#(?:0*38|x0*26);/gi,'&').replace(/\\\//g,'/');
 function resource(raw,base){
   try{
@@ -17,7 +18,7 @@ function resource(raw,base){
     return url;
   }catch{return null;}
 }
-function player(raw,base){const u=resource(raw,base);return u&&HOSTS.has(new URL(u).hostname)?u:null;}
+function player(raw,base){const u=resource(raw,base);return u&&(daddySiteUrl(u)||HOSTS.has(new URL(u).hostname))?u:null;}
 function attributes(tag){
   const out={};
   for(const m of tag.matchAll(/\b([\w-]+)\s*=\s*(["'])(.*?)\2/gs))out[m[1].toLowerCase()]=decode(m[3]);
@@ -62,21 +63,28 @@ async function read(response,limit,prefix=false){
   const bytes=new Uint8Array(length);let at=0;
   for(const part of parts){bytes.set(part,at);at+=part.length;}return bytes;
 }
-async function get(url,headers,fetcher,signal,segment=false,page=false){
-  let current=url;
+async function getOnce(url,headers,fetcher,signal,context,segment=false,page=false){
+  let current=url;const visited=new Set();
   for(let redirect=0;;redirect++){
+  if(visited.has(current))fail('redirect_not_supported');visited.add(current);
+  context.take();
+  const site=daddySiteUrl(current),referer=daddySiteUrl(headers.Referer);
+  const requestHeaders={...headers};
+  if(site&&referer)requestHeaders.Referer=site.origin+referer.pathname+referer.search;
   const response=await fetcher(current,{redirect:'manual',signal,
-    headers:{...headers,'Cache-Control':'no-store',...(segment?{Range:'bytes=0-4095'}:{})}});
+    headers:{...requestHeaders,'Cache-Control':'no-store',...(segment?{Range:'bytes=0-4095'}:{})}});
   if(page&&response.status>=300&&response.status<400){
     const location=response.headers.get('location'),next=location&&player(location,current);
     await response.body?.cancel().catch(()=>{});
-    if(!next||next===current||redirect>=2)fail('redirect_not_supported');
+    if(!next||next===current||redirect>=3||
+      (daddySiteUrl(current)&&!sameDaddyRoute(next,current))||
+      (daddySiteUrl(next)&&!daddyChannelPage(next,context.channelId)))fail('redirect_not_supported');
     current=next;continue;
   }
   if(response.status!==200&&!(segment&&response.status===206)){
     await response.body?.cancel().catch(()=>{});
     fail(response.status===401||response.status===403?'access_denied':
-      response.status>=300&&response.status<400?'redirect_not_supported':'upstream_http_error');
+      response.status>=300&&response.status<400?'redirect_not_supported':'upstream_http_error',response.status);
   }
   // Ignore optional response cookies. They do not prove session dependence.
   // Subsequent requests remain cookie-free; 401/403 is still a hard stop.
@@ -86,31 +94,37 @@ async function get(url,headers,fetcher,signal,segment=false,page=false){
   return page?{bytes,url:current}:bytes;
   }
 }
+async function get(url,headers,fetcher,context,segment=false,page=false){
+  return page?withDaddyFallback(url,fetcher,(candidate,signal)=>
+    getOnce(candidate,headers,fetcher,signal,context,false,true),context):
+    withDaddyAbort(()=>getOnce(url,headers,fetcher,context.signal,context,segment,false),context.signal);
+}
 export function ordinarySegment(bytes){
   if(bytes.length>188&&bytes[0]===0x47&&bytes[188]===0x47)return true;
   return bytes.length>=8&&['ftyp','styp','moof'].includes(new TextDecoder().decode(bytes.subarray(4,8)));
 }
-async function checkHls(url,headers,fetcher,signal){
+async function checkHls(url,headers,fetcher,context){
   let current=url;const visited=new Set();
   for(let hop=0;hop<3;hop++){
     if(visited.has(current))fail('playlist_loop');visited.add(current);
-    const text=new TextDecoder('utf-8',{fatal:true}).decode(await get(current,headers,fetcher,signal));
+    const text=new TextDecoder('utf-8',{fatal:true}).decode(await get(current,headers,fetcher,context));
     if(manifestKind(text)!=='hls')fail('unsupported_manifest');
     if(/^#EXT-X-(?:SESSION-KEY|KEY):/m.test(text))fail('encrypted_playlist');
     const uris=text.split(/\r?\n/).map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'));
     if(!uris.length)fail('empty_playlist');
     const next=resource(uris[0],current);if(!next)fail('session_media_address');
     if(/^#EXT-X-STREAM-INF:/m.test(text)){current=next;continue;}
-    if(!ordinarySegment(await get(next,headers,fetcher,signal,true)))fail('unsupported_segment_container');
+    if(!ordinarySegment(await get(next,headers,fetcher,context,true)))fail('unsupported_segment_container');
     return;
   }
   fail('playlist_depth_limit');
 }
-export async function resolveDaddyChannel(channelId,fetcher=fetch){
-  const start=daddyPlayerUrl(channelId);
+export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY}={}){
+  if(signal?.aborted)throw signal.reason;
+  const start=daddyPlayerUrl(channelId,origin);
   if(!start)return {status:'invalid_channel',stream:null};
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
-  const queue=[{url:start,referer:'https://thedaddy.pk/'}],seen=new Set();let status='no_public_media';
+  const context=daddyRequestContext({signal,timeout:6000});context.channelId=String(channelId).trim();
+  const queue=[{url:start,referer:new URL(start).origin+'/',entry:true}],seen=new Set();let status='no_public_media';
   const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
   try{
     for(let count=0;queue.length&&count<8;){
@@ -124,7 +138,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
       checks.pages++;
       let response;
       try{
-        response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,controller.signal,false,true);
+        response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,context,false,true);
       }catch(error){
         if(!page.optional||error.message!=='upstream_http_error')throw error;
         continue;
@@ -142,7 +156,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
         else{
           const headers={'User-Agent':AGENT,Referer:origin+'/',Origin:origin};
           try{
-            await checkHls(media,headers,fetcher,controller.signal);
+            await checkHls(media,headers,fetcher,context);
             const stream=nativeStreamRecord({url:media,headers,name:'DaddyLive · Kanal '+channelId});
             stream.description='Öffentliche HLS-Konfiguration automatisch aufgelöst; Manifest und erstes Segment geprüft. Gerätewiedergabe nicht bestätigt.';
             return {status:'resolved',stream,checks};
@@ -160,23 +174,24 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch){
       // Only offered same-channel alternatives; never manufacture media addresses.
       for(const tag of html.matchAll(/<(?:button|a)\b[^>]*\bdata-url\s*=[^>]*>/gi)){
         const a=attributes(tag[0]),url=player(a['data-url'],page.url);
-        if(url&&new URL(url).hostname==='thedaddy.pk'&&new URL(url).pathname.match(new RegExp('^/(?:stream|cast|watch|plus|casting|player|hub)/stream-'+channelId+'\\.php$'))&&!seen.has(url)&&queue.length<12){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
+        if(url&&daddyChannelPage(url,channelId)&&!seen.has(url)&&queue.length<12){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
       }
       // Current Android catalogue uses this public channel-selection page.
       // Read its offered buttons too; the legacy stream page may omit them.
-      if(page.url===start)queue.push({url:'https://thedaddy.pk/watch.php?id='+String(channelId).trim(),referer:page.url,optional:true});
+      if(page.entry)queue.push({url:new URL('/watch.php?id='+String(channelId).trim(),page.url).href,referer:page.url,optional:true});
     }
     return {status,stream:null,checks};
   }catch(error){
+    if(signal?.aborted)throw signal.reason;
     const codes=new Set(['empty_response','response_too_large','access_denied','redirect_not_supported',
       'upstream_http_error','session_required','playlist_loop','unsupported_manifest','encrypted_playlist',
-      'empty_playlist','session_media_address','unsupported_segment_container','playlist_depth_limit']);
-    return {status:controller.signal.aborted?'timeout':codes.has(error.message)?error.message:'not_reachable',stream:null,checks};
-  }finally{clearTimeout(timer);}
+      'empty_playlist','session_media_address','unsupported_segment_container','playlist_depth_limit','request_limit']);
+    return {status:context.signal.aborted||error.name==='TimeoutError'?'timeout':codes.has(error.message)?error.message:'not_reachable',stream:null,checks};
+  }finally{checks.requests=context.requests;checks.domainFallbacks=context.fallbacks;context.close();}
 }
-export async function automaticDaddyStreams(game,events,matchScore,env,fetcher){
+export async function automaticDaddyStreams(game,events,matchScore,env,fetcher,options={}){
   if(String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()!=='true')return [];
   const channels=[...new Set(matchDaddyEvents(game,events,matchScore).flatMap(e=>e.channels.map(c=>c.id)))].slice(0,2);
-  const results=await Promise.all(channels.map(id=>resolveDaddyChannel(id,fetcher)));
+  const results=await Promise.all(channels.map(id=>resolveDaddyChannel(id,fetcher,options)));
   return results.flatMap(r=>r.stream?[r.stream]:[]);
 }

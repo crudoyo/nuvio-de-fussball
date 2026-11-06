@@ -2,6 +2,7 @@
 import {readFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
 import {CALENDAR_VIEWS,weekWindow,berlinDate} from '../src/matchdays.js';
+import {daddySiteUrl} from '../src/daddy-domains.js';
 const base=new URL(process.env.WORKER_SMOKE_URL);
 if(base.protocol!=='https:'||base.username||base.password||base.pathname!=='/'||base.search||base.hash)
   throw new Error('WORKER_SMOKE_URL must be a public HTTPS origin');
@@ -96,6 +97,13 @@ if(![137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v)||
   bytes.readUInt32BE(16)!==1280||bytes.readUInt32BE(20)!==720)
   throw new Error('Detail background has invalid PNG dimensions');
 console.log(JSON.stringify({backgroundPng:'1280x720',separateFromPoster:true}));
+const sources=await json('/debug/sources.json?release='+version);
+const daddy=sources.providers?.find(p=>p.name==='DaddyLive (direkter Spielplan)');
+if(sources.version!==version||!daddy?.reachable||!daddy.footballEvents||!daddy.channels||
+  !daddySiteUrl(daddy.siteOrigin))
+  throw new Error('Current DaddyLive schedule or checked origin unavailable');
+console.log(JSON.stringify({daddyLiveOrigin:daddy.siteOrigin,footballEvents:daddy.footballEvents,
+  channels:daddy.channels,source:daddy.source}));
 // This is a transport diagnostic, not an assertion of actual device playback.
 const diagnostic=await json('/debug/daddy-native/426.json');
 console.log(JSON.stringify({channelId:diagnostic.channelId,status:diagnostic.status,

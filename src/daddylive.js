@@ -9,13 +9,14 @@
  * Documented channel URLs are HTML player pages, NOT native HLS streams.
  */
 import { parseDaddyHomepage } from './daddy-homepage.js';
-export const DADDY_HOMEPAGE = 'https://thedaddy.pk/';
+import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyRequestContext,withDaddyFallback} from './daddy-domains.js';
+export const DADDY_HOMEPAGE = DADDY_PRIMARY+'/';
 export const DADDY_PUBLIC_SCHEDULE =
   'https://dlstreams.st/schedule/schedule-generated.json';
 export const DADDY_CURRENT_SCHEDULE =
-  'https://thedaddy.pk/schedule/schedule-generated.json';
-export const DADDY_API_BASE = 'https://thedaddy.pk/daddyapi.php';
-export const DADDY_PLAYER_BASE = 'https://thedaddy.pk/stream/stream-';
+  DADDY_PRIMARY+'/schedule/schedule-generated.json';
+export const DADDY_API_BASE = DADDY_PRIMARY+'/daddyapi.php';
+export const DADDY_PLAYER_BASE = DADDY_PRIMARY+'/stream/stream-';
 const MAX_BODY_BYTES = 8_000_000;
 const CACHE_MS = 180_000;
 const FAILED_CACHE_MS = 20_000;
@@ -92,10 +93,11 @@ export function parseDaddySchedule(payload) {
   }
   return output;
 }
-export function daddyPlayerUrl(channelId) {
+export function daddyPlayerUrl(channelId,origin=DADDY_PRIMARY) {
   const id=String(channelId??'').trim();
   if(!/^\d{1,6}$/.test(id) || Number(id)===0)return null;
-  return DADDY_PLAYER_BASE+id+'.php';
+  const site=daddySiteUrl(origin);
+  return site&&site.pathname==='/'&&!site.search?site.origin+'/stream/stream-'+id+'.php':null;
 }
 function apiUrl(apiKey) {
   const base=new URL(DADDY_API_BASE);
@@ -108,35 +110,35 @@ function safeScheduleRedirect(raw, base) {
     const u=new URL(raw,base);
     // Only the known provider hosts and the exact schedule path are permitted.
     // Never forward an API key, authentication URL, cookies or caller headers.
-    if (u.protocol !== 'https:' || u.username || u.password || u.port ||
-        !['dlstreams.st','thedaddy.pk','www.thedaddy.pk'].includes(u.hostname))
-      return null;
+    if(!sameDaddyRoute(u.href,base))return null;
     if (!/^\/schedule\/schedule-generated\.json$/.test(u.pathname) ||
         u.search || u.hash) return null;
     return u.href;
   } catch {return null;}
 }
-async function downloadSchedule(url, fetcher, protectedApi=false, format='json') {
-  let current=url;
+async function downloadSchedule(url, fetcher, context, signal, protectedApi=false, format='json') {
+  let current=url;const visited=new Set();
   for (let redirects=0; redirects<=3; redirects++) {
+    if(visited.has(current))throw new Error('Redirect loop');visited.add(current);
+    context.take();
     const response=await fetcher(current,{
-      headers:{accept:'application/json'},
+      headers:{accept:format==='html'?'text/html':'application/json'},
       redirect:'manual',
-      signal:AbortSignal.timeout(8500)
+      signal
     });
     if (response.status>=300 && response.status<400) {
+      await response.body?.cancel().catch(()=>{});
+      if (protectedApi) throw new Error('Protected API redirect blocked');
       if(format==='html') {
         const location=response.headers.get('location');
         if(!location)throw new Error('HTTP '+response.status+' (no Location)');
         const target=new URL(location,current);
-        if(target.protocol!=='https:' || !['thedaddy.pk','www.thedaddy.pk'].includes(target.hostname)
-          || target.pathname!=='/' || target.search || target.hash)
+        if(!sameDaddyRoute(target.href,current)||target.pathname!=='/'||target.search)
           throw new Error('Homepage redirect blocked');
         if(target.href===current)throw new Error('Redirect loop');
         current=target.href;
         continue;
       }
-      if (protectedApi) throw new Error('Protected API redirect blocked');
       const location=response.headers.get('location');
       if(!location)throw new Error('HTTP '+response.status+' (no Location)');
       const destination=safeScheduleRedirect(location,current);
@@ -145,7 +147,7 @@ async function downloadSchedule(url, fetcher, protectedApi=false, format='json')
       current=destination;
       continue;
     }
-    if(!response.ok)throw new Error('HTTP '+response.status);
+    if(!response.ok){await response.body?.cancel().catch(()=>{});throw new Error('HTTP '+response.status);}
     const length=Number(response.headers.get('content-length')||0);
     if(length>MAX_BODY_BYTES)throw new Error('Payload too large');
     const contentType=String(response.headers.get('content-type')||'').toLowerCase();
@@ -167,7 +169,13 @@ async function downloadSchedule(url, fetcher, protectedApi=false, format='json')
     // A generic JSON error/landing response must never count as a working schedule.
     if(!Object.keys(schedule).some(k=>/\b20\d{2}\b/.test(k)))
       throw new Error('Invalid schema');
-    return parseDaddySchedule(payload);
+    const downloaded=parseDaddySchedule(payload),now=Date.now();
+    const events=downloaded.filter(e=>Number.isFinite(Date.parse(e.startTime))&&Date.parse(e.startTime)>=now-7*86400000);
+    if(downloaded.length&&!events.length){
+      const last=Math.max(...downloaded.map(e=>Date.parse(e.startTime)).filter(Number.isFinite));
+      if(Number.isFinite(last))throw new Error('Stale schedule ('+new Date(last).toISOString().slice(0,10)+')');
+    }
+    return {events,url:current};
   }
   throw new Error('Too many redirects');
 }
@@ -176,7 +184,8 @@ async function downloadSchedule(url, fetcher, protectedApi=false, format='json')
  * A source returning HTTP 200 but zero compatible football events is reported
  * distinctly from a network error.
  */
-export async function getDaddySchedule(env={},fetcher=fetch) {
+export async function getDaddySchedule(env={},fetcher=fetch,{signal}={}) {
+  if(signal?.aborted)throw signal.reason;
   const key=String(env.DADDY_API_KEY||'').trim();
   // Keep mocked fetchers uncached so tests and diagnostics remain independent.
   // API keys stay only in memory and are never included in response data.
@@ -184,54 +193,49 @@ export async function getDaddySchedule(env={},fetcher=fetch) {
   const useCache=fetcher===fetch;
   const old=useCache?cache.get(cacheKey):null;
   if(old && old.expires>Date.now())return old.result;
-  if(old?.pending)return old.pending;
+  if(old?.pending&&!signal)return old.pending;
   const pending=(async()=>{
-    const attempts=[];
+    const attempts=[],context=daddyRequestContext({signal});
     const candidates=[
       ...(key?[{name:'DaddyLive API (Schlüssel)',url:apiUrl(key),protectedApi:true}]:[]),
+      {name:'DaddyLive aktuelle Webseite',url:DADDY_HOMEPAGE,format:'html'},
       {name:'DaddyLive aktueller JSON-Pfad',url:DADDY_CURRENT_SCHEDULE},
-      {name:'DaddyLive früherer JSON-Pfad',url:DADDY_PUBLIC_SCHEDULE},
-      {name:'DaddyLive aktuelle Webseite',url:DADDY_HOMEPAGE,format:'html'}
+      {name:'DaddyLive früherer JSON-Pfad',url:DADDY_PUBLIC_SCHEDULE}
     ];
+    try{
     for(const source of candidates){
       try{
-        const downloaded=await downloadSchedule(source.url,fetcher,Boolean(source.protectedApi),source.format||'json');
-        const now=Date.now();
-        // A current homepage can contain a few unrelated historical events.
-        // Never expose stale fixtures as current simply because today's events exist.
-        const events=downloaded.filter(e=>{
-          const t=Date.parse(e.startTime);
-          return Number.isFinite(t) && t>=now-7*86400000;
-        });
-        if(downloaded.length && !events.length) {
-          const last=Math.max(...downloaded.map(e=>Date.parse(e.startTime)).filter(Number.isFinite));
-          if(Number.isFinite(last) && last<now-7*86400000)
-            throw new Error('Stale schedule ('+new Date(last).toISOString().slice(0,10)+')');
-        }
-        const result={reachable:true,source:source.name,events,attempts,
+        const {events,url}=await withDaddyFallback(source.url,fetcher,(url,attemptSignal)=>
+          downloadSchedule(url,fetcher,context,attemptSignal,Boolean(source.protectedApi),source.format||'json'),
+          context,{fallback:source.format==='html'});
+        const result={reachable:true,source:source.name,siteOrigin:new URL(url).origin,events,attempts,
           footballEvents:events.length,channelCount:
             new Set(events.flatMap(x=>x.channels.map(c=>c.id))).size};
         if(useCache)cache.set(cacheKey,{result,expires:Date.now()+CACHE_MS});
         return result;
       }catch(e){
+        if(signal?.aborted)throw signal.reason;
+        if(context.signal.aborted){attempts.push({source:source.name,reason:'Schedule timeout'});break;}
         const msg=String(e?.message||'request failed');
         const allowedReasons=new Set([
           'Invalid JSON','Invalid schema','API denied request','Payload too large',
           'Protected API redirect blocked','Public schedule redirected away from JSON',
           'Website HTML instead of schedule JSON','Too many redirects','Redirect loop',
-          'Homepage schedule unavailable','Homepage redirect blocked'
+          'Homepage schedule unavailable','Homepage redirect blocked','request_limit'
         ]);
         attempts.push({source:source.name,
           reason:/^HTTP \d{3}(?: \(no Location\))?$/.test(msg)?msg:
             allowedReasons.has(msg)||/^Stale schedule \(20\d{2}-\d{2}-\d{2}\)$/.test(msg)?msg:'Not reachable'});
+        if(msg==='request_limit')break;
       }
     }
     const result={reachable:false,source:null,events:[],attempts,
       footballEvents:0,channelCount:0};
     if(useCache)cache.set(cacheKey,{result,expires:Date.now()+FAILED_CACHE_MS});
     return result;
+    }finally{context.close();}
   })();
-  if(useCache)cache.set(cacheKey,{pending,expires:0});
+  if(useCache&&!signal)cache.set(cacheKey,{pending,expires:0});
   return pending;
 }
 export function matchDaddyEvents(game,events,matchScore) {
@@ -287,12 +291,12 @@ export function diagnoseDaddyFixture(game, events, matchScore) {
   };
 }
 /** Public HTML player entry, not a decrypted playlist nor guaranteed playable. */
-export function externalDaddyPlayers(game,events,matchScore) {
+export function externalDaddyPlayers(game,events,matchScore,origin=DADDY_PRIMARY) {
   const matches=matchDaddyEvents(game,events,matchScore);
   const streams=[],seen=new Set();
   for(const match of matches){
     for(const channel of match.channels){
-      const externalUrl=daddyPlayerUrl(channel.id);
+      const externalUrl=daddyPlayerUrl(channel.id,origin);
       if(!externalUrl||seen.has(externalUrl))continue;
       seen.add(externalUrl);
       streams.push({name:'Browser · DaddyLive · '+channel.name,externalUrl,
@@ -306,6 +310,7 @@ export function daddyPublicDiagnostic(result) {
   return {
     name:'DaddyLive (direkter Spielplan)',
     reachable:result.reachable,source:result.source,
+    siteOrigin:result.siteOrigin||null,
     footballEvents:result.footballEvents,channels:result.channelCount,
     externalPlayerType:'HTML (kein HLS)',
     attempts:result.attempts

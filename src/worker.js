@@ -20,7 +20,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.21';
+export const VERSION = '0.4.22';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -237,7 +237,7 @@ function isDirect(s, allowExternal){
   if (!s || typeof s !== 'object' || s.infoHash || s.fileIdx!==undefined || s.sources?.length)return false;
   return playbackUrl(s.url)||(allowExternal&&playbackUrl(s.externalUrl));
 }
-export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
+export async function resolveStreams(game, sources, fetcher=fetch, env={},signal) {
   const nativeOnly=String(env.NATIVE_ONLY||'').toLowerCase()==='true';
   // Independent providers are queried concurrently so an unavailable one
   // does not block the user's other stream options.
@@ -270,7 +270,7 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;
   }));
-  const daddyTask=getDaddySchedule(env,fetcher);
+  const daddyTask=getDaddySchedule(env,fetcher,{signal});
   // Resolve in parallel with the other addons so probing does not add its
   // entire deadline after an already slow provider query.
   const nativeTask=daddyTask.then(async daddy=>{
@@ -278,20 +278,20 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
     const configured=nativeMappedStreams(game,daddy.events,matchScore,env);
     const [mapped,automatic]=await Promise.all([
       String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'?verifiedNativeStreams(configured,fetcher):configured,
-      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher)
+      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin})
     ]);
     return [...mapped,...automatic];
   });
   const [all,daddy,native]=await Promise.all([addonTask,daddyTask,nativeTask]);
   const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
   const players=!nativeOnly && String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
-    ? externalDaddyPlayers(game,daddy.events,matchScore)
+    ? externalDaddyPlayers(game,daddy.events,matchScore,daddy.siteOrigin)
     : [];
   // Native entries are first; HTML players remain a clearly labeled fallback.
   return [...new Map([...native,...found.filter(s=>s.url),...found.filter(s=>!s.url),...players]
     .map(s=>[s.url||s.externalUrl,s])).values()];
 }
-export async function diagnoseSources(personal=[], fetcher=fetch, env={}) {
+export async function diagnoseSources(personal=[], fetcher=fetch, env={},options={}) {
   const all=streamSources(personal);
   const providerStatuses=await Promise.all(all.map(async (url,i)=>{
     const id=url.includes('sports.highfly.to')?'Sports Streams (Hauptserver)':
@@ -313,7 +313,7 @@ export async function diagnoseSources(personal=[], fetcher=fetch, env={}) {
       return {name:id,reachable:false,reason:status?'HTTP '+status[1]:'Not reachable'};
     }
   }));
-  const daddy=await getDaddySchedule(env,fetcher);
+  const daddy=await getDaddySchedule(env,fetcher,options);
   return [...providerStatuses,{
     ...daddyPublicDiagnostic(daddy),
     playerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
@@ -345,7 +345,7 @@ export async function handle(request,env={},fetcher=fetch) {
     if(pathname==='/configure')return html(page());
     const nativeCheck=pathname.match(/^\/debug\/daddy-native\/([1-9]\d{0,5})\.json$/);
     if(nativeCheck){
-      const result=await resolveDaddyChannel(nativeCheck[1],fetcher);
+      const result=await resolveDaddyChannel(nativeCheck[1],fetcher,{signal:request.signal});
       return json({version:VERSION,channelId:nativeCheck[1],status:result.status,
         nativeAvailable:Boolean(result.stream),checked:'entry_manifest_and_first_segment',
         devicePlaybackVerified:false,checks:result.checks},200,0);
@@ -372,7 +372,7 @@ export async function handle(request,env={},fetcher=fetch) {
       return json({version:VERSION,season:Number(env.SEASON)||seasonOf(),league:'Champions League',
         ok:clubs.filter(x=>x.usable).length,total:clubs.length,clubs},200,0);
     }
-    if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
+    if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env,{signal:request.signal})},200,0);
     if(pathname==='/debug/daddy-lookup.json'){
       const home=clean(url.searchParams.get('home')).slice(0,90);
       const away=clean(url.searchParams.get('away')).slice(0,90);
@@ -385,7 +385,7 @@ export async function handle(request,env={},fetcher=fetch) {
         team1:{teamName:home},team2:{teamName:away},
         matchDateTimeUTC:new Date(parsed).toISOString()
       };
-      const daddy=await getDaddySchedule(env,fetcher);
+      const daddy=await getDaddySchedule(env,fetcher,{signal:request.signal});
       const matched=matchDaddyEvents(fixture,daddy.events,matchScore);
       return json({
         version:VERSION,
@@ -405,7 +405,7 @@ export async function handle(request,env={},fetcher=fetch) {
       const fixturesInLeague=await fixtures(found.league,env,fetcher);
       const game=fixturesInLeague.find(x=>String(x.matchID)===found.mid);
       if(!game)return json({error:'Spiel nicht gefunden'},404);
-      const daddy=await getDaddySchedule(env,fetcher);
+      const daddy=await getDaddySchedule(env,fetcher,{signal:request.signal});
       const candidates=matchDaddyEvents(game,daddy.events,matchScore);
       return json({
         version:VERSION, fixture:gameId(found.league,game),
@@ -438,7 +438,7 @@ export async function handle(request,env={},fetcher=fetch) {
         details[1]==='meta'?standings(found.league,env,fetcher):Promise.resolve([])]);
       const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
       if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
-      const response=json({streams:await resolveStreams(game,sources,fetcher,env)},200,0);
+      const response=json({streams:await resolveStreams(game,sources,fetcher,env,request.signal)},200,0);
       response.headers.set('cache-control','no-store');return response;
     }
     const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
