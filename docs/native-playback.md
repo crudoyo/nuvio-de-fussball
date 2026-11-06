@@ -1,5 +1,142 @@
 # Native DaddyLive-Wiedergabe: Untersuchung vom 04.11.2026
 
+## Eigener HLS-Adapter in Version 0.4.23
+
+`src/daddy-playback.js` ergänzt nun die eigene Wiedergabekette für den aktuell
+geprüften `dembed.st/premiumtv/daddy.php?id=<Sender>`-Player. Sie liest dessen
+explizite SRC-/EDGE-/CHANNEL-Konfiguration ohne Skriptausführung. Der eigene
+`/daddy/live/<Sender>.m3u8`-Endpunkt ruft die öffentliche Playlist-Token-API wie
+der Originalplayer auf, erneuert Tokens nach halber TTL und nach einmaligem
+Playlist-403 und schreibt Varianten, Renditions und Medienadressen um. Für die
+aus `_econfig` gelesene Assetrage-Konfiguration sind die dokumentierten
+CDN-Adressen auf HTTPS-Port 8443 gesondert zugelassen.
+
+`src/daddy-media.js` verarbeitet normale TS-/MP4-Daten sowie die geprüften
+PNG-/WebP-Container. PNG-Pixel mit `TIKTIKPX` werden als begrenztes RGB/RGBA-Bild
+mit Filtern 0–4 gelesen, der darin enthaltene Gzip-TS-Payload wird entpackt und
+auf TS-Paketkennungen geprüft. PNG-IEND mit angehängtem TS, WebP-EXIF,
+`TIKTIKRAW` und `TIKTIKTSGZ` sind ebenfalls unterstützt. HTTP-Ranges werden auf
+die ausgegebenen Medienbytes angewandt. Verschlüsselte Playlists werden
+weiterhin abgewiesen; es wird keine DRM-Verarbeitung ergänzt.
+
+Player, Token-API und Medienziele haben getrennte feste Host-/Pfadregeln;
+fremde Ziele, Zugangsdaten in URLs und unbekannte Ports werden verworfen.
+Antworten und entpackte Medien sind größenbegrenzt. Eine einzelne
+Wiedergabeanfrage hat höchstens 20 Netzabrufe und 20 Sekunden; das zusätzliche
+Zeitbudget ist für Medienabrufe bestimmt. Die bestehende Senderauflösung
+behält ihre sechs Sekunden und die Daddy-Domain-Fallback-Regeln. Medien-URLs
+bleiben kurzlebige Wiedergabedaten; die Quellenzuordnung bleibt die Sender-ID.
+
+Die heruntergeladenen Referenzen wurden vor Weiterarbeit nochmals geprüft:
+`DaddyLiveProvider.js` ist identisch mit der unten referenzierten Repository-
+Datei, die bereitgestellte `README.md` ist identisch mit `resolver/README.md`
+des separaten Streamed.pk-Resolvers. Dessen WASM-/Protobuf-Handshake betrifft
+Streamed.pk, nicht die hier geprüfte öffentliche Daddy-Playlist-Token-API.
+Der Daddy-Provider selbst bevorzugt normale TS-Quellen und überspringt
+bestimmte TikTok-Quellen. Die beim aktuellen Abruf tatsächlich angebotenen
+Player für Magenta Sport 303 (11) und DAZN1 DE (426) liefern dagegen
+PNG-Pixelcontainer. Beide gespeicherten Live-Segmente wurden lokal in gültige,
+auf 188 Bytes ausgerichtete MPEG-TS-Pakete umgewandelt. Auch der vollständige
+HLS-Endpunkt in der lokalen Cloudflare-Runtime lieferte für beide Sender HTTP
+200 und TS. Vorübergehende Netzfehler, Timeouts und HTTP 5xx erlauben einen
+erneuten Medienabruf innerhalb desselben Gesamtbudgets; HTTP 401/403 erlauben
+keinen solchen Medien-Retry. Die oben beschriebene öffentliche Playlist-Token-
+Erneuerung ist davon getrennt. Das ist kein Bild-/Tontest auf dem Nutzergerät.
+
+`src/index.js` exportiert für Cloudflare ausschließlich den Worker-Handler.
+Damit gelangen die benannten Node-Testhelfer aus `worker.js` nicht mehr in die
+Runtime-Exporttabelle. Der zusätzliche CI-Schritt `check-worker-runtime.mjs`
+startet die tatsächliche lokale Runtime, um solche Startfehler zu erkennen;
+ein reiner Wrangler-Dry-Run führt den Worker nicht aus.
+
+Die folgenden Abschnitte dokumentieren frühere Zustände. Aussagen über einen
+fehlenden eigenen Playlistproxy oder fehlende Containerverarbeitung beschreiben
+den Stand vor dieser Ergänzung.
+
+## Korrektur der Quellenanbindung in Version 0.4.23 (06.11.2026)
+
+Die bisher automatisch verwendete Nuvio-Live-Sports-Instanz
+`nuvio.moaqeel6679.my.id` liefert HTTP 530. Der Entwickler nennt in seiner
+[aktualisierten Ankündigung](https://www.reddit.com/r/nuvioaddons/comments/1wfexs3/update_the_nuvio_live_sports_public_instance_is/)
+`https://nuviosports.xyz` als neue Adresse. Ihr Manifest war sowohl lokal als
+auch über die Quellen-Diagnose des veröffentlichten Cloudflare-Workers
+erreichbar. Die automatische Quelle verwendet jetzt diese Adresse.
+
+Für FC Bayern München Frauen gegen SV Werder Bremen Frauen am 06.11.2026,
+17:30 UTC (OpenLigaDB-Spiel 85776), liefert diese Instanz unter anderem native
+DaddyLive-Optionen für Magenta Sport 303 und DAZN1 DE. Der lokale Liveabruf
+des korrigierten Add-ons übernimmt beide Medienadressen sowie die vom Anbieter
+gelieferten Header und `notWebReady: false` unverändert. Es werden weiterhin
+die normalen Katalog-/Stream-Endpunkte verwendet, keine privaten Resolverrouten.
+Die Medienaufbereitung übernimmt der ursprüngliche Anbieter.
+
+Der Mannschaftsabgleich wertet gemeinsame Wörter wie `Frauen` und `Women`
+nicht mehr als Vereinsnamen. Zuvor konnte der gemeinsame Zusatz auf beiden
+Seiten genügen und Sender fremder Frauenbegegnungen beisteuern. Regressionstests
+prüfen beide Vereinsidentitäten, die aktuelle Standardquelle und die unveränderte
+Weitergabe der nativen Streamdaten.
+
+Die Nutzerbilder zeigen native Wiedergabe im ursprünglichen Nuvio-Live-Sports-
+Add-on. Das ist kein Gerätetest unseres korrigierten Add-ons. Ein erreichbares
+Manifest und zurückgegebene Direktstreams belegen ebenfalls keine vollständige
+Bild-/Tonwiedergabe auf dem Zielgerät. Der unten beschriebene begrenzte direkte
+DaddyLive-Resolver erhält durch diese Änderung keinen neuen Spezialtransport.
+
+## Referenzprüfung: Nuvio Live Sports (06.11.2026)
+
+Der vom Nutzer genannte Quellcode
+[`rajhodedara/live-sport-plugin`](https://github.com/rajhodedara/live-sport-plugin)
+wurde am Commit `92589e4c0bef327d7cc483c3fbe2d40908ba8e17` geprüft. Dieser
+serverseitige Wiedergabeweg ergänzt die ältere Android-Analyse unten: Für
+vergleichbare Quellen muss nicht zwingend der Nuvio-Player geändert werden.
+
+Die konkrete Kette in der Referenz:
+
+1. [`DaddyLiveProvider.resolveStream`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/providers/DaddyLiveProvider.js#L905)
+   prüft alternative Playerpfade für dieselbe Sender-ID, lädt die eingebetteten
+   Player und folgt begrenzten weiteren Player-Ebenen. Tote Embed-Hosts werden
+   ausgelassen; eine Hostregistrierung priorisiert bekannte funktionierende Wege.
+2. [`_resolveFromHtml`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/providers/DaddyLiveProvider.js#L348)
+   liest unter anderem die kodierte `_econfig`, normale HLS-Konfigurationen,
+   JSON-Playerantworten und verschachtelte Frames. Dabei werden auch in JSON
+   maskierte Querytrenner erhalten. Ein erfolgreich dekodierter Link ist erst
+   die Eingabe für die weitere Medienbehandlung.
+3. [`_buildManifestStream`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/providers/DaddyLiveProvider.js#L538)
+   gibt einen eigenen HLS-Endpunkt zurück. Er wird vor Veröffentlichung zu
+   `/api/manifest.m3u8` umgeschrieben. Manifestabruf und Player-Unterabrufe
+   müssen dasselbe Referer-/Origin-Paar verwenden; der Titel »Direct Stream«
+   schließt einen serverseitigen Playlistproxy nicht aus.
+4. Der [`Manifest-Endpunkt`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/routes/manifest.js#L30)
+   lädt und prüft Playlists, schreibt Folgeadressen um und hält Live-Playlists
+   kurz im Cache. [`remint.js`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/remint.js#L180)
+   kann für die ursprüngliche Quelle eine frische Medienadresse ermitteln,
+   wenn eine abgelaufene Adresse abgewiesen wird.
+5. [`HlsRewriteService`](https://github.com/rajhodedara/live-sport-plugin/blob/92589e4c0bef327d7cc483c3fbe2d40908ba8e17/src/services/HlsRewriteService.js#L142)
+   behandelt Varianten und Ressourcen in HLS-Tags. Normale Mediensegmente bleiben
+   CDN-Abrufe. Für bestimmte mit Bildheadern versehene TS-Segmente existieren
+   gesonderte Byte-Range-/Proxy-Wege. Der Code beweist nicht, dass jeder Sender
+   diese Sonderbehandlung benötigt.
+
+Die bereits gelesenen Original-Streamantworten für Magenta Sport 303 und DAZN1 DE
+zeigen den eigenen `/api/manifest.m3u8`-Endpunkt. Die darin enthaltenen
+CDN-Adressen verwenden HTTPS auf Port 8443, die Queryfelder `s` und `e` sowie
+`https://assetrage.net/` als Referer. Querywerte und vollständige Medienadressen
+werden hier nicht gespeichert. Damit ist für die gezeigten Optionen der
+Playlistproxy nachgewiesen; deren konkrete Segmentformate wurden nicht geprüft.
+
+Unser direkter Resolver unterstützt `_econfig` und diese Embed-Hosts noch nicht;
+`publicResourceUrl` lehnt explizite Ports ab. Er besitzt außerdem weder eigene
+Playlist-Ausgabe noch Quellen-Erneuerung oder Segmentanpassung. Der Status
+`provider_transport_required` eines anderen Testkanals ist deshalb kein Beleg,
+dass diese konkreten Sender eine Android-DataSource erfordern.
+
+Die Korrektur in 0.4.23 übernimmt weiterhin fertige Ergebnisse des ursprünglichen
+Add-ons. Eine eigenständige DaddyLive-Anbindung nach dieser Referenz ist damit
+noch nicht implementiert oder auf dem Nutzergerät getestet. Die bestätigten
+Daddy-Domain-Aliase, Sender-IDs, Requestlimits und Abbruchregeln bleiben für
+eine spätere Anpassung maßgeblich; aus der Referenz entsteht keine pauschale
+Freigabe unbekannter Hosts oder aller Ports.
+
 ## Ergänzung für Version 0.4.6
 
 Die nachfolgende ursprüngliche Analyse beschreibt die Grenze des Android-

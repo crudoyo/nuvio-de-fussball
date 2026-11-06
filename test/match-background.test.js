@@ -54,7 +54,7 @@ test('catalog and personal detail metadata use a separate, versioned background 
     const body=await reply.json(),meta=body.meta||body.metas[0];
     assert.equal(reply.status,200);
     assert.notEqual(meta.poster,meta.background);
-    assert.equal(meta.background,`https://addon.test${path.startsWith(prefix)?prefix:''}/background/bl1/998877.png?v=0.4.22`);
+    assert.equal(meta.background,`https://addon.test${path.startsWith(prefix)?prefix:''}/background/bl1/998877.png?v=0.4.23`);
     let observed;
     const image=await handle(new Request(meta.background),{SEASON:'2026',
       __testPngRenderer:async svg=>{observed=render(svg);return observed.asPng();}},fetcher);

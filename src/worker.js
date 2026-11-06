@@ -20,7 +20,8 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.22';
+import {handleDaddyPlayback} from './daddy-playback.js';
+export const VERSION = '0.4.23';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -29,7 +30,7 @@ const BUILTIN_MANIFESTS = [
   'https://sports.highfly.to/manifest.json',
   'https://sportsfree.highfly.to/manifest.json',
   'https://sportsfree-us2.highfly.to/manifest.json',
-  'https://nuvio.moaqeel6679.my.id/manifest.json'
+  'https://nuviosports.xyz/manifest.json'
 ];
 function streamSources(personal = []) {
   return safeUrls([...personal, ...BUILTIN_MANIFESTS]);
@@ -218,7 +219,8 @@ function manifest(list) {
 const simplify=s=>clean(s).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
 const aliases=[[/\brot weiss essen\b|\brw essen\b|\brwe\b/g,'essen'],[/\bbayern munchen\b|\bbayern munich\b/g,'bayern'],[/\bborussia dortmund\b|\bbvb\b/g,'dortmund'],[/\bborussia monchengladbach\b|\bgladbach\b/g,'monchengladbach'],[/\bkoln\b|\bcologne\b/g,'koln'],[/\bfortuna dusseldorf\b/g,'dusseldorf'],[/\brb leipzig\b/g,'leipzig'],[/\bwerder bremen\b/g,'bremen']];
 function normalize(x) { let s=simplify(x);for(const [re,to]of aliases)s=s.replace(re,to);return s; }
-const common=new Set('fc sv sc vfl vfb bsc tsv fsv ssv club e v ev football soccer the vs live sport match 1 2 04 05 06'.split(' '));
+// Shared competition/gender labels are not evidence of either club's identity.
+const common=new Set('fc sv sc vfl vfb bsc tsv fsv ssv club e v ev football soccer the vs live sport match frauen women womens woman ladies 1 2 04 05 06'.split(' '));
 const needles=x=>[...new Set(normalize(x).split(' ').filter(w=>w.length>3&&!common.has(w)))].sort((a,b)=>b.length-a.length).slice(0,2);
 export function matchScore(fixture,event) {
   const s=normalize([event.name,event.title,event.description].filter(Boolean).join(' '));
@@ -237,7 +239,7 @@ function isDirect(s, allowExternal){
   if (!s || typeof s !== 'object' || s.infoHash || s.fileIdx!==undefined || s.sources?.length)return false;
   return playbackUrl(s.url)||(allowExternal&&playbackUrl(s.externalUrl));
 }
-export async function resolveStreams(game, sources, fetcher=fetch, env={},signal) {
+export async function resolveStreams(game, sources, fetcher=fetch, env={},signal,{playbackOrigin}={}) {
   const nativeOnly=String(env.NATIVE_ONLY||'').toLowerCase()==='true';
   // Independent providers are queried concurrently so an unavailable one
   // does not block the user's other stream options.
@@ -278,7 +280,7 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={},signal
     const configured=nativeMappedStreams(game,daddy.events,matchScore,env);
     const [mapped,automatic]=await Promise.all([
       String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'?verifiedNativeStreams(configured,fetcher):configured,
-      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin})
+      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin,playbackOrigin})
     ]);
     return [...mapped,...automatic];
   });
@@ -297,7 +299,7 @@ export async function diagnoseSources(personal=[], fetcher=fetch, env={},options
     const id=url.includes('sports.highfly.to')?'Sports Streams (Hauptserver)':
       url.includes('sportsfree.highfly.to')?'Sports Streams (Mirror 1)':
       url.includes('sportsfree-us2.highfly.to')?'Sports Streams (Mirror 2)':
-      url.includes('nuvio.moaqeel6679.my.id')?'Nuvio Live Sports':
+      ['nuviosports.xyz','nuvio.moaqeel6679.my.id'].includes(new URL(url).hostname)?'Nuvio Live Sports':
       url.includes('pengu.uk')?'PenguPlay':'Persönlicher Anbieter '+(i+1);
     try {
       const manifest=await loadJSON(url,300,fetcher);
@@ -327,13 +329,14 @@ export async function handle(request,env={},fetcher=fetch) {
   if(request.method!=='GET')return json({error:'Nur GET erlaubt'},405);
   const url=new URL(request.url), origin=url.origin;
   try {
+    if(url.pathname.startsWith('/daddy/'))return handleDaddyPlayback(request,env,fetcher);
     if(url.pathname==='/'||url.pathname==='/configure')return html(page());
     if(url.pathname==='/health')return json({ok:true,version:VERSION,season:Number(env.SEASON)||seasonOf(),
       nativePlayback:{automaticPublicHls:String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()==='true',
         verifyConfiguredManifests:String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true',
         nativeOnly:String(env.NATIVE_ONLY||'').toLowerCase()==='true',
         browserFallbacks:String(env.NATIVE_ONLY||'').toLowerCase()!=='true'&&String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true',
-        providerTokenRenewal:false,packedSegments:false}},200,0);
+        providerTokenRenewal:true,packedSegments:true}},200,0);
     if(url.pathname==='/generate'){
       const sources=safeUrls((url.searchParams.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean).slice(0,12));
       const prefix=sources.length?`/u/${encodeConfig(sources)}`:'';
@@ -345,9 +348,9 @@ export async function handle(request,env={},fetcher=fetch) {
     if(pathname==='/configure')return html(page());
     const nativeCheck=pathname.match(/^\/debug\/daddy-native\/([1-9]\d{0,5})\.json$/);
     if(nativeCheck){
-      const result=await resolveDaddyChannel(nativeCheck[1],fetcher,{signal:request.signal});
+      const result=await resolveDaddyChannel(nativeCheck[1],fetcher,{signal:request.signal,playbackOrigin:origin});
       return json({version:VERSION,channelId:nativeCheck[1],status:result.status,
-        nativeAvailable:Boolean(result.stream),checked:'entry_manifest_and_first_segment',
+        nativeAvailable:Boolean(result.stream),checked:result.verification||'entry_manifest_and_first_segment',
         devicePlaybackVerified:false,checks:result.checks},200,0);
     }
     if(pathname==='/debug/crests/bl3.json'){
@@ -438,7 +441,7 @@ export async function handle(request,env={},fetcher=fetch) {
         details[1]==='meta'?standings(found.league,env,fetcher):Promise.resolve([])]);
       const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
       if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
-      const response=json({streams:await resolveStreams(game,sources,fetcher,env,request.signal)},200,0);
+      const response=json({streams:await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin})},200,0);
       response.headers.set('cache-control','no-store');return response;
     }
     const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);

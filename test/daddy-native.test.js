@@ -151,7 +151,7 @@ test('package, manifest and health expose the same new version and capability sw
   const get=p=>handle(new Request('https://addon.example.org'+p),{DADDY_NATIVE_RESOLVE:'true',NATIVE_VERIFY_MANIFESTS:'true'},async()=>new Response('[]'));
   assert.notEqual(VERSION,'0.4.5');assert.equal(pkg.version,VERSION);
   const health=await(await get('/health')).json();assert.equal(health.version,VERSION);
-  assert.equal(health.nativePlayback.automaticPublicHls,true);assert.equal(health.nativePlayback.packedSegments,false);
+  assert.equal(health.nativePlayback.automaticPublicHls,true);assert.equal(health.nativePlayback.packedSegments,true);
   const manifest=await(await get('/manifest.json')).json();assert.equal(manifest.version,VERSION);
   assert.equal((await get('/u/'+encodeConfig([])+'/configure')).status,200);
 });

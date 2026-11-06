@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sportsCatalogRequests,forwardSportsStream} from '../src/upstream-sports.js';
-import {resolveStreams} from '../src/worker.js';
+import {resolveStreams,matchScore,diagnoseSources} from '../src/worker.js';
 
 const game={
   matchDateTimeUTC:'2026-11-06T20:30:00Z',
@@ -79,4 +79,52 @@ test('finds an event using the existing addon search and forwards its native rel
   assert.equal(streams.length,1);
   assert.equal(streams[0].url,direct);
   assert.deepEqual(streams[0].behaviorHints,hints);
+});
+
+const womenGame={
+  matchDateTimeUTC:'2026-11-06T17:30:00Z',
+  team1:{teamName:'FC Bayern München Frauen'},
+  team2:{teamName:'SV Werder Bremen Frauen'}
+};
+const womenEvent={
+  id:'nuvio_sport_dlv_event_bayern_bremen',type:'tv',
+  name:'🔴 LIVE: Bayern vs Werder Bremen',released:'2026-11-06T17:30:00Z',
+  description:'🏆 League: Frauen-Bundesliga\n📅 Category: FOOTBALL'
+};
+
+test('requires both club identities even when every event contains Frauen or Women',()=>{
+  assert(matchScore(womenGame,womenEvent)>=12);
+  for(const name of ['Frauen-Bundesliga: Frankfurt vs Leverkusen',
+    'Frauen-Bundesliga: Bayern vs Köln','Frauen-Bundesliga: Essen vs Werder Bremen']){
+    assert.equal(matchScore(womenGame,{...womenEvent,name}),-1,name);
+  }
+  const english={...womenGame,team1:{teamName:'Bayern Munich Women'},team2:{teamName:'Werder Bremen Women'}};
+  assert.equal(matchScore(english,{name:'Women Bundesliga: Frankfurt vs Leverkusen'}),-1);
+  assert(matchScore(english,womenEvent)>=12);
+});
+
+test('the default source uses the announced Nuvio Live Sports domain and keeps its native streams',async()=>{
+  const origin='https://nuviosports.xyz',seen=[];
+  const hints={notWebReady:false,bingeGroup:'original-match',proxyHeaders:{request:{Referer:origin+'/'}}};
+  const direct=origin+'/api/manifest.m3u8?sid=public-test-value';
+  const sourceStream={name:'⚡ Direct Stream',title:'DaddyLive | Magenta Sport 303',url:direct,behaviorHints:hints};
+  const mock=async url=>{
+    const u=String(url);seen.push(u);
+    if(u===origin+'/manifest.json')return json({name:'🏆 Nuvio Live Sports',types:['tv'],resources:['stream'],
+      catalogs:[{type:'tv',id:'nuvio_sports_football',name:'Soccer',extra:[{name:'search'}]}]});
+    if(u.startsWith(origin+'/catalog/tv/nuvio_sports_football'))return json({metas:[
+      {...womenEvent,id:'wrong-women-match',name:'🔴 LIVE: Frankfurt vs Leverkusen'},womenEvent
+    ]});
+    if(u===origin+'/stream/tv/'+womenEvent.id+'.json')return json({streams:[sourceStream]});
+    return json({},404);
+  };
+  const streams=await resolveStreams(womenGame,[],mock,{});
+  assert.equal(streams.length,1);
+  assert.equal(streams[0].url,direct);
+  assert.equal(streams[0].externalUrl,undefined);
+  assert.deepEqual(streams[0].behaviorHints,hints);
+  assert(!seen.some(url=>url.includes('nuvio.moaqeel6679.my.id')));
+  assert(!seen.some(url=>url.endsWith('/stream/tv/wrong-women-match.json')));
+  const report=await diagnoseSources([],mock,{});
+  assert(report.some(p=>p.name==='Nuvio Live Sports'&&p.reachable&&p.hasStreamResource));
 });

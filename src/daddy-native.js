@@ -1,11 +1,12 @@
-/** Resolve ordinary public HLS only. No token handshake, cookies, script execution,
- * DRM processing or container unwrapping. Failures retain the browser fallback.
+/** Resolve ordinary HLS and the explicitly supported Daddy HLS adapters.
+ * No arbitrary script execution, cookies or DRM. Failures retain browser options.
  */
 import {daddyPlayerUrl,matchDaddyEvents} from './daddylive.js';
 import {publicMediaUrl,publicResourceUrl,nativeStreamRecord} from './native-streams.js';
 import {manifestKind} from './manifest-check.js';
+import {adapterPlayerUrl,resolveDaddyAdapterPage} from './daddy-playback.js';
 import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyChannelPage,daddyRequestContext,withDaddyFallback,withDaddyAbort} from './daddy-domains.js';
-const HOSTS=new Set(['dembed.st','ksohls.ru',
+const HOSTS=new Set(['assetrage.net','dembed.st','ksohls.ru',
   'www.ksohls.ru','tossequip.net','api.cdnlivetv.tv','out-3.welovetocare.shop']);
 const SPECIAL=new Set(['dembed.st','ksohls.ru','www.ksohls.ru']);
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -119,7 +120,7 @@ async function checkHls(url,headers,fetcher,context){
   }
   fail('playlist_depth_limit');
 }
-export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY}={}){
+export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin}={}){
   if(signal?.aborted)throw signal.reason;
   const start=daddyPlayerUrl(channelId,origin);
   if(!start)return {status:'invalid_channel',stream:null};
@@ -129,9 +130,9 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
   try{
     for(let count=0;queue.length&&count<8;){
       const page=queue.shift();if(seen.has(page.url))continue;seen.add(page.url);
-      // Known custom transports cannot yield a direct stream here. Do not
-      // spend the page budget fetching them ahead of offered standard players.
-      if(SPECIAL.has(new URL(page.url).hostname)){
+      // Skip unsupported legacy transports. The checked current Daddy page
+      // has a server-side adapter and is resolved below.
+      if(SPECIAL.has(new URL(page.url).hostname)&&!adapterPlayerUrl(page.url,channelId)){
         status='provider_transport_required';checks.providerTransportPages++;continue;
       }
       count++;
@@ -148,6 +149,10 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       const origin=new URL(page.url).origin;
       const html=new TextDecoder('utf-8',{fatal:true}).decode(response.bytes);
       if(SPECIAL.has(new URL(page.url).hostname)){status='provider_transport_required';checks.providerTransportPages++;}
+      if(adapterPlayerUrl(page.url,channelId)){
+        const adapted=await resolveDaddyAdapterPage(channelId,html,page.url,fetcher,context,{playbackOrigin,referer:page.referer});
+        if(adapted){checks.mediaConfigurations++;return {...adapted,checks};}
+      }
       const media=literalMedia(html);
       if(media){
         checks.mediaConfigurations++;
@@ -185,13 +190,17 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
     if(signal?.aborted)throw signal.reason;
     const codes=new Set(['empty_response','response_too_large','access_denied','redirect_not_supported',
       'upstream_http_error','session_required','playlist_loop','unsupported_manifest','encrypted_playlist',
-      'empty_playlist','session_media_address','unsupported_segment_container','playlist_depth_limit','request_limit']);
+      'empty_playlist','session_media_address','unsupported_segment_container','playlist_depth_limit','request_limit','invalid_playlist_token']);
     return {status:context.signal.aborted||error.name==='TimeoutError'?'timeout':codes.has(error.message)?error.message:'not_reachable',stream:null,checks};
   }finally{checks.requests=context.requests;checks.domainFallbacks=context.fallbacks;context.close();}
 }
 export async function automaticDaddyStreams(game,events,matchScore,env,fetcher,options={}){
   if(String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()!=='true')return [];
-  const channels=[...new Set(matchDaddyEvents(game,events,matchScore).flatMap(e=>e.channels.map(c=>c.id)))].slice(0,2);
-  const results=await Promise.all(channels.map(id=>resolveDaddyChannel(id,fetcher,options)));
+  const channels=[...new Map(matchDaddyEvents(game,events,matchScore).flatMap(e=>e.channels).map(c=>[c.id,c])).values()].slice(0,2);
+  const results=await Promise.all(channels.map(async channel=>{
+    const result=await resolveDaddyChannel(channel.id,fetcher,options);
+    if(result.stream&&result.stream.url.includes('/daddy/live/'))result.stream.name='DaddyLive HLS · '+channel.name;
+    return result;
+  }));
   return results.flatMap(r=>r.stream?[r.stream]:[]);
 }
