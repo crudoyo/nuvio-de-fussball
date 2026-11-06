@@ -10,10 +10,11 @@ import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
   diagnoseDaddyFixture
 } from './daddylive.js';
-import {nativeAddonStream,nativeMappedStreams} from './native-streams.js';
+import {nativeMappedStreams} from './native-streams.js';
+import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.12';
+export const VERSION = '0.4.13';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -194,31 +195,28 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={}) {
   const addonTask=Promise.allSettled(streamSources(sources).map(async source=>{
     const streams=[];
     const addon=await loadJSON(source,3600,fetcher);
-    const catalogs=(addon.catalogs||[])
-      .filter(c=>['tv','sports','sport','other','movie'].includes(c.type) &&
-        (c.type==='sport' || /(soccer|football|fußball|fussball|sport|live|events|matches|today|upcoming)/i.test(String(c.id)+' '+String(c.name))))
-      .sort((a,b)=>Number(/football|soccer|fußball|fussball/i.test(String(b.id)+' '+String(b.name)))-
-        Number(/football|soccer|fußball|fussball/i.test(String(a.id)+' '+String(a.name))))
-      .slice(0,12);
-    const eventResponses=await Promise.allSettled(catalogs.map(c=>
-      loadJSON(addonPath(source,'catalog/'+encodeURIComponent(c.type)+'/'+encodeURIComponent(c.id)+'.json'),80,fetcher)
-        .then(json=>(json.metas||[]).map(m=>({...m,_type:m.type||c.type})))
+    // Use the actual catalogs and optional search extras declared by the source.
+    // This includes the Nuvio Live Sports soccer catalog, not its replay hubs.
+    const requests=sportsCatalogRequests(addon,game);
+    const eventResponses=await Promise.allSettled(requests.map(c=>
+      loadJSON(addonPath(source,c.path),80,fetcher)
+        .then(json=>(Array.isArray(json.metas)?json.metas:[])
+          .map(m=>({...m,_type:m.type||c.type})))
     ));
-    const matches=eventResponses.filter(r=>r.status==='fulfilled').flatMap(r=>r.value)
+    const events=new Map();
+    for(const m of eventResponses.filter(r=>r.status==='fulfilled').flatMap(r=>r.value)){
+      const key=String(m._type)+'/'+String(m.id);
+      if(m.id!=null&&!events.has(key))events.set(key,m);
+    }
+    const matches=[...events.values()]
       .map(m=>({m,score:matchScore(game,m)})).filter(x=>x.score>=10)
-      .sort((a,b)=>b.score-a.score).slice(0,3);
+      .sort((a,b)=>b.score-a.score).slice(0,4);
     const variants=await Promise.allSettled(matches.map(async({m})=>{
       const result=await loadJSON(addonPath(source,
         'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),30,fetcher);
-      return (result.streams||[]).filter(s=>isDirect(s,!nativeOnly)).slice(0,12)
-        .map(s=>{
-          const direct=playbackUrl(s.url);
-          const name=String(addon.name||'Sport')+' · '+String(s.name||'Quelle');
-          const stream={...s,name:(direct?name:'Browser · '+name).slice(0,100)};
-          if(direct)delete stream.externalUrl;
-          else delete stream.url;
-          return nativeAddonStream(stream);
-        });
+      return (Array.isArray(result.streams)?result.streams:[])
+        .map(s=>forwardSportsStream(s,source,addon.name,!nativeOnly))
+        .filter(Boolean).slice(0,12);
     }));
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;

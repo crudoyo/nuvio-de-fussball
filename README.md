@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.12 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.13 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -203,3 +203,12 @@ Version 0.4.8 ignoriert optionale Antwortcookies im automatischen Resolver, ohne
 Version 0.4.9 überspringt bekannte Spezialtransporte bereits vor dem Abruf. So bleibt das begrenzte Budget für bis zu acht Playerseiten mit gewöhnlichen Medienquellen verfügbar; Gesamtdeadline und Zugriffsprüfungen bleiben bestehen.
 
 Ab 0.4.12 bietet der produktive Worker direkte Medienquellen zuerst und Browserquellen als gekennzeichnete Alternativen an. Ist keine Direktquelle verfügbar, kann nur eine Browserquelle erscheinen. Scheitert die native Wiedergabe im Client, kann die Browserquelle in der Quellenauswahl separat geöffnet werden.
+
+ 
+## Anbieter-Streamübernahme (v0.4.13)
+
+Diese Version übernimmt das **bereits vom angebundenen Sport-Addon aufgelöste** Stremio-Streamobjekt. Auch von Anbietern bereitgestellte HTTP(S)-Resolver-/Manifest-URLs sind normale Stream-URLs; sie müssen nicht auf `.m3u8` enden. Insbesondere werden die vom Anbieter gesetzten `behaviorHints` einschließlich `notWebReady` und `proxyHeaders` **nicht** vom Fußball-Addon überschrieben. Native Quellen erhalten in der Quellenauswahl weiterhin Vorrang vor Browserlinks.
+
+Für Fußball werden die passenden, im Quellmanifest deklarierten Kataloge zuerst abgefragt; Replay- und 24/7-Netzwerk-Kataloge werden ausgelassen. Deklariert ein Fußballkatalog die Stremio-`search`-Extra, versucht die Bridge zusätzlich die beiden Vereinsnamen. Doppelte Ereignisse aus Such- und Standardkatalog werden vor der Streamabfrage zusammengeführt. Relative Browser-Fallback-Links erhalten die Basisadresse des Originalanbieters.
+
+Dies nutzt die **bereits öffentlich angebotenen Addon-Endpunkte** von Sports Streams und Nuvio Live Sports sowie optional verbundene persönliche Manifeste. Wenn deren Host den Cloudflare-Worker blockiert oder der Anbieter keinen Stream für dieses Spiel liefert, ist auch hier keine Quelle garantiert. Die Bridge ist **keine Kopie** des originalen Node.js-Backends und ersetzt keine Android-Media3-Spezialtransporte, Token-Handshake oder unzulässige Entschlüsselung. Die Wiedergabe auf dem Fire TV bleibt separat zu testen. Bei der Einrichtung keine persönlichen URL-Tokens veröffentlichen.
