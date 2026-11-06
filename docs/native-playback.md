@@ -11,6 +11,12 @@ nicht als Fußball behandelt. Fertige Streamantworten werden frisch geladen,
 ohne zusätzliche Cache-API-Aufrufe oder Wiederverwendung alter Medienadressen.
 Ein Regressionstest zählt Fetch- und Cache-Aufrufe der gemeinsamen Abfrage
 einschließlich zweier Daddy-Sender gegen ein simuliertes 50-Request-Limit.
+Die Streamliste erzeugt nach Erkennung der geprüften Playerkonfiguration eine
+stabile HLS-Adresse. Token- und Playlistabrufe erfolgen erst bei deren Auswahl,
+innerhalb eines eigenen Abrufbudgets. So entfernt ein vorübergehender Fehler
+einer vorgeschalteten Medienprobe nicht die unterstützte Wiedergabeoption.
+Die Diagnose kennzeichnet diese Vorprüfung ausdrücklich als
+`player_configuration`; Manifest- und Mediennachweise bleiben davon getrennt.
 
 ## Übergabe an die Streamliste in Version 0.4.24
 

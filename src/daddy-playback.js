@@ -157,9 +157,10 @@ export async function resolveDaddyAdapterPage(id,html,pageUrl,fetcher,context,{p
   const config=daddyPlayerConfig(html,pageUrl,id);if(!config)return null;
   if(!playbackOrigin)return {status:'playback_origin_required',stream:null};
   const session=crypto.randomUUID(),variant=variantOf(referer,id);
-  await playlist(config,config.url,session,fetcher,context);
+  // The stable HLS endpoint performs media I/O when selected. Listing a known
+  // adapter must not lose its option to a transient preflight or shared budget.
   put(store(fetcher).configs,id+':'+variant,{config,until:Date.now()+30000},32);
-  return {status:'resolved',verification:'entry_and_manifest',stream:{
+  return {status:'resolved',verification:'player_configuration',stream:{
     name:'DaddyLive HLS · Kanal '+id,
     url:new URL('/daddy/live/'+id+'.m3u8?sid='+session+'&variant='+variant,playbackOrigin).href,
     description:'HLS für den Nuvio-Player; Playlist-Erneuerung und Mediencontainer werden serverseitig verarbeitet.',
