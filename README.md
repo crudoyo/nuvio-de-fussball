@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.13 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.14 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -212,3 +212,8 @@ Diese Version übernimmt das **bereits vom angebundenen Sport-Addon aufgelöste*
 Für Fußball werden die passenden, im Quellmanifest deklarierten Kataloge zuerst abgefragt; Replay- und 24/7-Netzwerk-Kataloge werden ausgelassen. Deklariert ein Fußballkatalog die Stremio-`search`-Extra, versucht die Bridge zusätzlich die beiden Vereinsnamen. Doppelte Ereignisse aus Such- und Standardkatalog werden vor der Streamabfrage zusammengeführt. Relative Browser-Fallback-Links erhalten die Basisadresse des Originalanbieters.
 
 Dies nutzt die **bereits öffentlich angebotenen Addon-Endpunkte** von Sports Streams und Nuvio Live Sports sowie optional verbundene persönliche Manifeste. Wenn deren Host den Cloudflare-Worker blockiert oder der Anbieter keinen Stream für dieses Spiel liefert, ist auch hier keine Quelle garantiert. Die Bridge ist **keine Kopie** des originalen Node.js-Backends und ersetzt keine Android-Media3-Spezialtransporte, Token-Handshake oder unzulässige Entschlüsselung. Die Wiedergabe auf dem Fire TV bleibt separat zu testen. Bei der Einrichtung keine persönlichen URL-Tokens veröffentlichen.
+
+
+## Vereinswappen v0.4.14
+
+Die Wappen werden zusätzlich mit einem lokalen, aus Nuvio Live Sports stammenden Katalog bekannter ESPN- und TheSportsDB-Bildadressen aufgelöst. Der Katalog enthält 1.945 normalisierte Einträge, nicht ausschließlich deutsche Mannschaften. Quelle: https://github.com/rajhodedara/live-sport-plugin/blob/main/src/data/team_logos_seed.json (MIT). Vereine erhalten eindeutige Namenszuordnungen; die generierten Spielposter und die Nuvio-Metadaten liefern nun Teamlogos mit Quellen-Fallbacks. Bei unbekannten oder nicht erreichbaren Wappen bleiben die Mannschaftskürzel. Das Fire-TV-Ergebnis muss am Gerät geprüft werden.
