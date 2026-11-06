@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.15 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.16 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -226,3 +226,8 @@ Die Nuvio-TV-App kann zwar SVG prinzipiell dekodieren, aber nicht alle komplexen
 Außerdem berücksichtigt NuvioTVs derzeitiges `MetaPreview`-Datenmodell keine zusätzlichen Felder `team1.logo` und `team2.logo`. Die auf der Startseite sichtbaren beiden Club-Wappen müssen daher bereits in der normalen Poster-Grafik stecken; die zusätzliche Metadaten-Ausgabe der vorherigen Version allein konnte das nicht leisten.
 
 Die PNG-Konvertierung nutzt eingebundene Roboto-Schriften. Quellbilder werden beim Posterabruf weiterhin einzeln heruntergeladen; bei fehlenden Wappen erscheinen Teamkürzel. Das tatsächliche Update ist nur nach dem Cloudflare-Deployment und einem Refresh des Addons sichtbar.
+
+
+## Schnellere Posterabrufe v0.4.16
+
+Der Nuvio-TV-Bildlader hat laut `NuvioApplication.kt` ein Gesamtzeitlimit von 8 Sekunden. Um diesen Wert einzuhalten, ruft der Worker bei Posteranfragen nicht mehr zusätzlich die komplette ESPN-Teamübersicht ab. Die vorhandenen OpenLigaDB- und lokalen Team-Logo-Adressen werden weiterhin genutzt. Falls eine bekannte Rasterdatei nicht funktioniert, werden alternative Mannschaftsbild-URLs parallel statt nacheinander angefragt. Der vollständige PNG-Response wird für 15 Minuten in Cloudflares Edge-Cache zwischengespeichert. Dadurch sind nachfolgende Posterabrufe deutlich schneller; beim ersten Abruf oder bei langsamen Bild-Hosts sind Zeitüberschreitungen weiterhin möglich.

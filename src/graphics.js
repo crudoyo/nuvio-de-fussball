@@ -111,13 +111,18 @@ export async function makeMatchPoster(match, competition, kickoffLabel, matchSta
     // Static PNG badges supplied by Nuvio Live Sports cover many clubs missing
     // from OpenLigaDB's SVG links, including lower divisions. Fall back to the
     // original league data, then the independently matched ESPN logo.
-    const candidates=[curatedCrest(team?.teamName),team?.teamIconUrl,
-      team?.teamIconBackupUrl];
-    for(const url of new Set(candidates.filter(Boolean))){
-      const data=await badgeData(url,fetcher);
+    const known=curatedCrest(team?.teamName);
+    if(known){
+      const data=await badgeData(known,fetcher);
       if(data)return data;
     }
-    return null;
+    // Neither a dead OpenLigaDB badge nor an ESPN timeout should block the
+    // other alternative. Fetch distinct sources in parallel and prefer the
+    // original official URL when both work.
+    const options=[team?.teamIconUrl,team?.teamIconBackupUrl]
+      .filter((url,index,all)=>url && url!==known && all.indexOf(url)===index);
+    const images=await Promise.all(options.map(url=>badgeData(url,fetcher)));
+    return images.find(Boolean)||null;
   }
   const [left, right] = await Promise.all([badge(match.team1),badge(match.team2)]);
   return '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="405" viewBox="0 0 720 405">'

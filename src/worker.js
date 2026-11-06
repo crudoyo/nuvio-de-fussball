@@ -15,7 +15,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.15';
+export const VERSION = '0.4.16';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -118,7 +118,7 @@ async function leagues(env, fetcher) {
   catch { /* use core leagues if discovery is unavailable */ }
   return discoverLeagues(Array.isArray(rows)?rows:[],env.EXTRA_LEAGUES||'');
 }
-async function fixtures(league,env,fetcher) {
+async function fixtures(league,env,fetcher,loadArtworkBackups=true) {
   const external=espnScoreboardUrl(league.shortcut);
   let matches;
   if(external) matches=normalizeEspnEvents(await loadJSON(external,600,fetcher));
@@ -130,7 +130,7 @@ async function fixtures(league,env,fetcher) {
   // The second source only improves artwork; missing/blocked ESPN must
   // never prevent the match catalog from being shown.
   const crestUrl=espnTeamsUrl(league.shortcut);
-  if(!crestUrl || !matches.length) return matches;
+  if(!loadArtworkBackups || !crestUrl || !matches.length) return matches;
   try {
     return attachFallbackCrests(matches, await loadJSON(crestUrl,14400,fetcher));
   } catch { return matches; }
@@ -362,12 +362,20 @@ export async function handle(request,env={},fetcher=fetch) {
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
     if(details){const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);const games=await fixtures(found.league,env,fetcher),game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix)});const response=json({streams:await resolveStreams(game,sources,fetcher,env)},200,0);response.headers.set('cache-control','no-store');return response;}
     const image=pathname.match(/^\/poster\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
-    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[1].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);const games=await fixtures(league,env,fetcher);const game=games.find(x=>String(x.matchID)===image[2]);if(!game)return json({error:'Spiel nicht gefunden'},404);const svg=await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher);
+    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[1].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);
+      // Avoid a second, serial ESPN request in image paths. An 8s delay is
+      // enough for NuvioTV's image loader to time out on the poster.
+      const cache=typeof caches!=='undefined' && caches.default ? caches.default : null;
+      const cacheKey=new Request(request.url);
+      if(cache){const hit=await cache.match(cacheKey);if(hit)return hit;}
+      const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[2]);if(!game)return json({error:'Spiel nicht gefunden'},404);const svg=await makeMatchPoster(game,league,dateLabel(game),status(game),fetcher);
       if(image[3]==='svg')return new Response(svg,{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});
       const renderer=typeof env.__testPngRenderer==='function' ? env.__testPngRenderer :
         (await import('./poster-png.js')).renderPng;
       const png=await renderer(svg);
-      return new Response(png,{headers:{'content-type':'image/png',...corsHeaders(1800)}});}
+      const response=new Response(png,{headers:{'content-type':'image/png',...corsHeaders(900)}});
+      if(cache)await cache.put(cacheKey,response.clone());
+      return response;}
     return json({error:'Nicht gefunden'},404);
   }catch(err){return json({error:'Anfrage fehlgeschlagen',detail:String(err.message||err).slice(0,130)},400,20);}
 }
