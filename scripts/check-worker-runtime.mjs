@@ -2,6 +2,7 @@
 import {spawn} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 import {VERSION} from '../src/worker.js';
+import {checkConfiguration} from './check-configuration.mjs';
 const port=8791;
 const child=spawn(process.execPath,['node_modules/wrangler/bin/wrangler.js','dev','--local','--ip','127.0.0.1',
   '--port',String(port),'--log-level','error','--show-interactive-dev-session','false'],{
@@ -23,4 +24,5 @@ try{
   if(health?.version!==VERSION||!health?.nativePlayback?.packedSegments||!health?.nativePlayback?.providerTokenRenewal)
     throw new Error('Worker runtime failed to start with the expected HLS adapter: '+log);
   console.log(JSON.stringify({workerRuntime:'started',version:health.version,packedSegments:true,providerTokenRenewal:true}));
+  await checkConfiguration(`http://127.0.0.1:${port}`,VERSION);
 }finally{child.kill('SIGTERM');}

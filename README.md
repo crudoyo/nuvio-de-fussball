@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.25 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.5.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -9,7 +9,8 @@
 - **Neu:** UEFA Champions League (OpenLigaDB, Kürzel `ucl`), Europa League und Conference League (ESPN-Soccer-Spielplan-Adapter, ohne API-Schlüssel).
 - Jedes Spiel als eigene Kachel mit Anstoßzeit (Europe/Berlin), Gegnern und Status. Die Wochenübersichten der 1. Bundesliga und 3. Liga zeigen alle Spiele von Montag bis Sonntag, einschließlich englischer Wochen; andere Kataloge zeigen 24 Stunden zurück und 30 Tage voraus. Die PNG-Poster enthalten, soweit verfügbar, beide **Vereinswappen**, kurze Mannschaftsnamen und bei den Testligen den Wochentag. Die Detailansicht erhält eine eigene PNG-Grafik mit beiden Wappen in der Bildmitte.
 - Spielbeschreibungen zeigen verfügbare Statistiken: in den drei deutschen Profiligen Tabellenplatz, Punkte und Tore sowie die Form aus bis zu fünf beendeten Spielen desselben Wettbewerbs. Das gilt auch für die Beschreibung beim Markieren einer Katalogkachel. Beendete Partien nennen End- und gegebenenfalls Halbzeitstand.
-- Konfigurationsseite `/configure` für bis zu sechs **exakte HTTPS-Manifest-URLs** aus zusätzlichen Sport-Add-ons (insbesondere die persönliche Nuvio-Live-Sports- oder PenguPlay-Live-TV-URL).
+- Mobile Konfigurationsseite `/configure`: Kataloge einzeln oder pro Wettbewerb auswählen, suchen und mit Pfeilen sortieren. Browser-Ersatzoptionen lassen sich ausschalten. Bis zu acht **exakte HTTPS-Manifest-URLs** zusätzlicher Sport-Add-ons können ergänzt werden.
+- Persönliche HTTPS-Import-URL mit Kopierknopf und direkte Installation über **In Nuvio installieren** bzw. **In Stremio installieren**. Alle drei Links enthalten dieselbe Auswahl. Der persönliche Konfigurationslink stellt die Einstellungen später wieder her; bisherige Installationslinks bleiben gültig. Details: [Konfiguration und App-Links](docs/configuration.md).
 - Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuviosports.xyz`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. DaddyLive ergänzt einen eigenen Spielplanadapter und für den geprüften aktuellen Player einen HLS-Endpunkt mit öffentlichen Playlist-Tokens und begrenzter PNG-/WebP-Medienverarbeitung. Externe HTML-Player bleiben gekennzeichnete Ersatzoptionen. Keine beliebige Skriptausführung, DRM-Verarbeitung oder P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
 
@@ -27,10 +28,10 @@
 2. Als Worker-Name **`nuvio-de-fussball`** verwenden (entspricht `wrangler.jsonc`).
 3. Deploy-Befehl **`npx wrangler deploy`**; kein Build-Befehl nötig. Nach dem Verknüpfen werden Änderungen an GitHub automatisch ausgerollt.
 4. Den erhaltenen HTTPS-Endpunkt öffnen, z.B. `https://nuvio-de-fussball.DEINE-SUBDOMAIN.workers.dev/configure`.
-5. Optional die **persönliche Manifest-URL von Nuvio Live Sports** und/oder die **für Live TV konfigurierte PenguPlay-Manifest-URL** einfügen. Sports Streams und die öffentliche Nuvio-Live-Sports-Instanz werden bereits automatisch probeweise abgefragt. Auf **Installations-URL erstellen** klicken.
-6. Den generierten `https://.../manifest.json`-Link in **Nuvio → Add-ons** einfügen, nicht bei JavaScript-Plugins.
+5. Kataloge auswählen und sortieren, Browser-Ersatzoptionen nach Wunsch deaktivieren. Optional unter **Zusätzliche Streamquellen** die persönliche Manifest-URL von Nuvio Live Sports oder die für Live TV konfigurierte PenguPlay-Manifest-URL einfügen. Auf **Installationslinks erstellen** klicken.
+6. Auf dem Handy **In Nuvio installieren** oder **In Stremio installieren** wählen und die Installation gegebenenfalls in der App bestätigen. Alternativ **URL kopieren** und den generierten HTTPS-Link in der App unter **Add-ons** importieren, nicht bei JavaScript-Plugins.
 
-Wenn Nuvio deine Startseite mit Fußball-Reihen füllt, sortiere oder deaktiviere die Home-Kataloge in Nuvio – das Add-on muss dafür nicht entfernt werden.
+Über **Auswahl bearbeiten** oder `/u/<Konfiguration>/configure` lässt sich die Auswahl später ändern. Anschließend den neuen Link in der App installieren; je nach Client muss dabei die bisherige Installation ersetzt werden. Die App kann zusätzlich eigene Einstellungen für Home-Kataloge anbieten.
 
 ## Lokale Entwicklung
 
@@ -53,8 +54,10 @@ Veröffentlichen: `npx wrangler deploy` (Cloudflare-Login erforderlich).
 ## Endpunkte
 
 - `/configure` – Webkonfigurator
+- `/generate` – POST des Konfigurationsformulars; erzeugt Import- und App-Links
 - `/manifest.json` – Add-on-Manifest ohne Streams
 - `/u/<Konfiguration>/manifest.json` – individuelles Manifest
+- `/u/<Konfiguration>/configure` – gespeicherte Auswahl bearbeiten
 - `/catalog/tv/defootball_bl1.json` – aktuelle Bundesliga-Kalenderwoche, Montag bis Sonntag
 - `/catalog/tv/defootball_bl1_friday.json` – Freitag dieser Woche
 - `/catalog/tv/defootball_bl1_saturday.json` – Samstag dieser Woche

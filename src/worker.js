@@ -21,9 +21,11 @@ import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
-export const VERSION = '0.4.25';
+import {MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
+import {configurePage,installationPage} from './configure-page.js';
+export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
+export const VERSION = '0.5.0';
 const API = 'https://api.openligadb.de';
-const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
 const BUILTIN_MANIFESTS = [
@@ -46,8 +48,6 @@ const coreOrder=new Map(core.map(([shortcut],index)=>[shortcut.toLowerCase(),ind
 const leaguePattern = /(regionalliga|oberliga|bayernliga|landesliga|verbandsliga|thüringenliga|hessenliga|mittelrheinliga|niedersachsenliga|nordostliga|brandenburgliga|schleswig-holstein-liga|frauen.*liga|liga.*frauen|pokal|kreisliga|bezirksliga)/i;
 const excludedPattern = /(test|prob(e|ier)|hockey|admiral|österreich|la liga|premier league|weltmeisterschaft)/i;
 const memoryCache = new Map();
-const txt = new TextEncoder();
-const decoder = new TextDecoder();
 
 function seasonOf(now = new Date()) { return now.getUTCFullYear() - (now.getUTCMonth() < 6 ? 1 : 0); }
 function clean(v) { return String(v ?? '').trim(); }
@@ -55,35 +55,16 @@ function cacheTTL(ttl) { return Math.min(ttl, 21600); }
 function corsHeaders(age = 90) { return { 'access-control-allow-origin': '*', 'cache-control': `public, max-age=${age}`, 'x-content-type-options': 'nosniff' }; }
 function json(body, status = 200, age = 90) { return new Response(JSON.stringify(body), {status, headers: {'content-type':'application/json; charset=utf-8', ...corsHeaders(age)}}); }
 function html(body, status = 200) { return new Response(body, {status,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}}); }
-const escape = s => String(s ?? '').replace(/[&<>"']/g, x=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[x]);
 
-function hostIsUnsafe(host) {
-  return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.test') || /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':');
-}
-export function manifestUrl(input) {
-  try {
-    const url = new URL(clean(input));
-    if (url.protocol !== 'https:' || url.username || url.password || url.port || !url.pathname.endsWith('/manifest.json') || hostIsUnsafe(url.hostname)) return null;
-    if (url.href.length > 512) return null;
-    return url.href;
-  } catch { return null; }
-}
-function safeUrls(xs) { return [...new Set(xs.map(manifestUrl).filter(Boolean))].slice(0, MAX_UPSTREAMS); }
-function b64encode(s) { return btoa(String.fromCharCode(...txt.encode(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
-function b64decode(s) { return decoder.decode(Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/') + '='.repeat((4-s.length%4)%4)), c=>c.charCodeAt(0))); }
-export function encodeConfig(xs) { return b64encode(JSON.stringify({m:safeUrls(xs)})); }
-export function decodeConfig(s) {
-  if (!/^[A-Za-z0-9_-]{1,3500}$/.test(s)) throw new Error('Ungültige Konfiguration');
-  const value=JSON.parse(b64decode(s));
-  if (!Array.isArray(value.m)) throw new Error('Ungültige Konfiguration');
-  return safeUrls(value.m);
-}
 function catalogId(shortcut) { return `defootball_${shortcut.toLowerCase().replace(/[^a-z0-9_-]/g,'')}`; }
 function leagueCatalogs(league){
   const base={type:'tv',id:catalogId(league.shortcut),name:`⚽ ${league.name}`};
   return hasCalendarCatalogs(league.shortcut)?CALENDAR_VIEWS.map(view=>({
     ...base,id:base.id+view.suffix,name:base.name+' · '+view.label
   })):[base];
+}
+function configurationCatalogs(list){
+  return list.flatMap(league=>leagueCatalogs(league).map(c=>({...c,league:league.shortcut.toLowerCase(),leagueName:league.name})));
 }
 function parseCatalog(id,list){
   for(const league of list){
@@ -217,8 +198,8 @@ function meta(m,league,origin,prefix='',statistics=null) {
     team1:{name:home,logo:teamLogo(m.team1)},team2:{name:away,logo:teamLogo(m.team2)},
     behaviorHints:{defaultVideoId:id}};
 }
-function manifest(list) {
-  return {id:'com.community.nuvio.defootball',version:VERSION,name:'Deutscher Fußball · Spielpläne',description:'Deutsche Fußballligen als einzelne Spielkataloge. OpenLigaDB + optionale Quellen aus bereits vorhandenen Sport-Add-ons.',types:['tv'],resources:[{name:'catalog',types:['tv']},{name:'meta',types:['tv'],idPrefixes:['defootball_']},{name:'stream',types:['tv'],idPrefixes:['defootball_']}],catalogs:list.flatMap(leagueCatalogs),behaviorHints:{configurable:true}};
+function manifest(list,settings={}) {
+  return {id:'com.community.nuvio.defootball',version:VERSION,name:'Deutscher Fußball · Spielpläne',description:'Deutsche Fußballligen als einzelne Spielkataloge. OpenLigaDB + optionale Quellen aus bereits vorhandenen Sport-Add-ons.',types:['tv'],resources:[{name:'catalog',types:['tv']},{name:'meta',types:['tv'],idPrefixes:['defootball_']},{name:'stream',types:['tv'],idPrefixes:['defootball_']}],catalogs:selectedCatalogs(list.flatMap(leagueCatalogs),settings),behaviorHints:{configurable:true}};
 }
 const simplify=s=>clean(s).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
 const aliases=[[/\brot weiss essen\b|\brw essen\b|\brwe\b/g,'essen'],[/\bbayern munchen\b|\bbayern munich\b/g,'bayern'],[/\bborussia dortmund\b|\bbvb\b/g,'dortmund'],[/\bborussia monchengladbach\b|\bgladbach\b/g,'monchengladbach'],[/\bkoln\b|\bcologne\b/g,'koln'],[/\bfortuna dusseldorf\b/g,'dusseldorf'],[/\brb leipzig\b/g,'leipzig'],[/\bwerder bremen\b/g,'bremen']];
@@ -325,16 +306,14 @@ export async function diagnoseSources(personal=[], fetcher=fetch, env={},options
     playerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
   }];
 }
-const CSS=`<style>body{margin:0;background:#0e1825;color:#f2f7fb;font:16px system-ui,sans-serif;line-height:1.6}main{max-width:760px;margin:42px auto;padding:0 20px}.panel{background:#16283a;border:1px solid #30465a;padding:20px;border-radius:14px;margin:20px 0}h1{font-size:28px}p,li{color:#c4d3dd}a{color:#9be2c9}textarea,input{box-sizing:border-box;width:100%;background:#081726;color:#fff;border:1px solid #52677b;border-radius:8px;padding:12px;font:inherit}button{background:#8ee0bc;color:#082019;padding:12px 17px;border:0;border-radius:8px;font-weight:bold;cursor:pointer}small{color:#9daebd}</style>`;
-const page=()=>`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio Fußball</title>${CSS}<main><h1>⚽ Deutscher Fußball für Nuvio</h1><p>Addon-Version ${VERSION}. Unterstützte Direktquellen öffnen im nativen Player; Browser-Fallbacks sind entsprechend gekennzeichnet.</p><p>Für 1. Bundesliga und 3. Liga: aktuelle Woche, Freitag, Samstag, Sonntag und kommende Woche. Die Wochenübersichten enthalten alle Spiele von Montag bis Sonntag, auch in englischen Wochen.</p><div class="panel"><h2>Streams aus vorhandenen Add-ons (optional)</h2><p>Die öffentlichen Schnittstellen von Sports Streams und Nuvio Live Sports werden probeweise geprüft. <strong>PenguPlay Live TV funktioniert nur mit deiner persönlichen konfigurierten Manifest-URL.</strong> Füge sie hier hinzu, auch wenn du die Pengu-Kataloge in Nuvio ausgeblendet hast. Nicht die /configure-URL.</p><form action="/generate" method="get"><label for="sources">Manifest-URLs, eine pro Zeile:</label><textarea id="sources" name="sources" rows="5" placeholder="https://…/manifest.json"></textarea><p><button type="submit">Installations-URL erstellen</button></p></form><small>Ohne persönliche URL kann der Worker nicht auf deine PenguPlay-Live-TV-Konfiguration zugreifen. Streams erscheinen nur, wenn ein Anbieter eine Begegnung zuordnen und einen Direktstream liefern kann. Vor dem Spielbeginn sind Streams oft noch nicht verfügbar. Ein eigener DaddyLive-Spielplanadapter wird zusätzlich geprüft. Dessen dokumentierte Playerlinks öffnen HTML-Seiten und sind keine nativen HLS-Streams. Nicht jeder Event ist in den externen Add-ons auffindbar.</small></div><div class="panel"><p><a href="/manifest.json">Manifest ohne Streams</a> · <a href="/health">Status</a> · <a href="/debug/sources.json">Quellen-Diagnose</a></p><p>Für Nuvio die generierte URL unter Add-ons hinzufügen, nicht unter JavaScript-Plugins.</p></div><p><small>Daten: <a href="https://openligadb.de/">OpenLigaDB</a> (ODbL 1.0). Keine Gewähr für die Abdeckung aller deutschen Ligen. Unabhängiges Community-Projekt.</small></p></main></html>`;
-function installPage(url,count) {return `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nuvio installieren</title>${CSS}<main><h1>⚽ Nuvio-Installation</h1><div class="panel"><p>${count} Sport-Add-on(s) konfiguriert.</p><p>Diese URL unter <strong>Nuvio → Add-ons</strong> hinzufügen:</p><input id="u" readonly value="${escape(url)}"><p><button id="copy" onclick="navigator.clipboard.writeText(document.getElementById('u').value).then(()=>this.innerText='Kopiert!')">URL kopieren</button></p><a href="${escape(url)}">Manifest öffnen</a> · <a href="${escape(url.replace(/manifest\.json$/,'debug/sources.json'))}">Quellen prüfen</a></div><small>Die Installations-URL kann persönliche Zugriffstoken deiner Sport-Add-ons enthalten. Nicht öffentlich teilen.</small><p><a href="/configure">Zurück</a></p></main></html>`;}
 export async function handle(request,env={},fetcher=fetch) {
-  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,OPTIONS'}});
-  if(request.method!=='GET')return json({error:'Nur GET erlaubt'},405);
   const url=new URL(request.url), origin=url.origin;
+  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type'}});
+  if(request.method!=='GET'&&!(request.method==='POST'&&url.pathname==='/generate'))return json({error:'Methode nicht erlaubt'},405);
+  const browserAllowed=String(env.NATIVE_ONLY||'').toLowerCase()!=='true';
   try {
     if(url.pathname.startsWith('/daddy/'))return handleDaddyPlayback(request,env,fetcher);
-    if(url.pathname==='/'||url.pathname==='/configure')return html(page());
+    if(url.pathname==='/'||url.pathname==='/configure')return html(configurePage({version:VERSION,catalogs:configurationCatalogs(await leagues(env,fetcher)),browserAllowed}));
     if(url.pathname==='/health')return json({ok:true,version:VERSION,season:Number(env.SEASON)||seasonOf(),
       nativePlayback:{automaticPublicHls:String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()==='true',
         verifyConfiguredManifests:String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true',
@@ -342,14 +321,25 @@ export async function handle(request,env={},fetcher=fetch) {
         browserFallbacks:String(env.NATIVE_ONLY||'').toLowerCase()!=='true'&&String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true',
         providerTokenRenewal:true,packedSegments:true}},200,0);
     if(url.pathname==='/generate'){
-      const sources=safeUrls((url.searchParams.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean).slice(0,12));
-      const prefix=sources.length?`/u/${encodeConfig(sources)}`:'';
-      return html(installPage(`${origin}${prefix}/manifest.json`,sources.length));
+      const catalogs=configurationCatalogs(await leagues(env,fetcher));let form=new URLSearchParams();
+      try{
+        form=request.method==='POST'?await readSettingsForm(request):url.searchParams;
+        const customized=form.get('customize')==='1';
+        const settings=customized?settingsFromForm(form,catalogs):{m:safeUrls((form.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean))};
+        if(customized&&!selectedCatalogs(catalogs,settings).length)throw new Error('Bitte mindestens einen verfügbaren Katalog auswählen.');
+        const personal=customized||settings.m.length;
+        const prefix=personal?'/u/'+encodeSettings(settings):'';
+        return html(installationPage({version:VERSION,url:origin+prefix+'/manifest.json',settings,catalogs,browserAllowed}));
+      }catch(error){
+        const chosen=form.getAll('catalog').filter(id=>/^defootball_[a-z0-9_-]{2,90}$/.test(id)).slice(0,256);
+        return html(configurePage({version:VERSION,catalogs,settings:{m:[],c:chosen,b:form.get('browser')==='on'},
+          rawSources:form.get('sources')||'',browserAllowed,error:error.message}),400);
+      }
     }
-    let pathname=url.pathname,prefix='',sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(','));
-    const match=pathname.match(/^\/u\/([A-Za-z0-9_-]{1,3500})(\/.*)$/);
-    if(match){pathname=match[2];prefix=`/u/${match[1]}`;sources=decodeConfig(match[1]);}
-    if(pathname==='/configure')return html(page());
+    let pathname=url.pathname,prefix='',sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(',')),settings={m:[]};
+    const match=pathname.match(new RegExp('^/u/([A-Za-z0-9_-]{1,'+MAX_CONFIG_LENGTH+'})(/.*)$'));
+    if(match){pathname=match[2];prefix=`/u/${match[1]}`;settings=decodeSettings(match[1]);sources=settings.m;env=configuredPlayback(env,settings);}
+    if(pathname==='/configure')return html(configurePage({version:VERSION,catalogs:configurationCatalogs(await leagues(env,fetcher)),settings,browserAllowed}));
     const nativeCheck=pathname.match(/^\/debug\/daddy-native\/([1-9]\d{0,5})\.json$/);
     if(nativeCheck){
       const result=await resolveDaddyChannel(nativeCheck[1],fetcher,{signal:request.signal,playbackOrigin:origin});
@@ -427,9 +417,10 @@ export async function handle(request,env={},fetcher=fetch) {
     }
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/|\/background\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const list=await leagues(env,fetcher);
-    if(pathname==='/manifest.json')return json(manifest(list),200,3600);
+    if(pathname==='/manifest.json')return json(manifest(list,settings),200,3600);
     const catalog=pathname.match(/^\/catalog\/tv\/([^/]+)\.json$/);
     if(catalog){
+      if(settings.c&&!settings.c.includes(catalog[1]))return json({metas:[]});
       const found=parseCatalog(catalog[1],list);if(!found)return json({metas:[]});
       const [games,table]=await Promise.all([
         fixtures(found.league,env,fetcher),standings(found.league,env,fetcher)

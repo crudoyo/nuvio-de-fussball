@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
 import {CALENDAR_VIEWS,weekWindow,berlinDate} from '../src/matchdays.js';
 import {daddySiteUrl} from '../src/daddy-domains.js';
+import {checkConfiguration} from './check-configuration.mjs';
 const base=new URL(process.env.WORKER_SMOKE_URL);
 if(base.protocol!=='https:'||base.username||base.password||base.pathname!=='/'||base.search||base.hash)
   throw new Error('WORKER_SMOKE_URL must be a public HTTPS origin');
@@ -27,6 +28,7 @@ if(health.nativePlayback.nativeOnly!==false||health.nativePlayback.browserFallba
 const manifest=await json('/manifest.json?release='+version);
 if(manifest.version!==version)throw new Error('Manifest and health versions differ');
 console.log(JSON.stringify({version:health.version,nativePlayback:health.nativePlayback,manifestVersion:manifest.version}));
+await checkConfiguration(base,version);
 const expectedCatalogs=['bl1','bl3'].flatMap(league=>CALENDAR_VIEWS.map(v=>`defootball_${league}${v.suffix}`));
 if(JSON.stringify(manifest.catalogs.slice(0,10).map(c=>c.id))!==JSON.stringify(expectedCatalogs))
   throw new Error('Calendar catalog blocks are not in the expected order');
