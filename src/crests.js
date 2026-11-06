@@ -1,3 +1,84 @@
+
+/**
+ * Reuse the published club crest seed from Nuvio Live Sports. The free
+ * TheSportsDB key now restricts arbitrary team lookups, so a bundled static
+ * lookup is more reliable than a network search for every generated poster.
+ * Match exact normalized names or explicit aliases only: don't confuse a
+ * football club with a basketball/hockey club from the same city.
+ */
+import {CLUB_LOGOS} from './club-logo-seed.js';
+
+const LOCAL_ALIASES={
+  'fcbayernmunchen':'bayernmunich',
+  'fcbayernmunich':'bayernmunich',
+  'fcbarcelona':'barcelona',
+  'fckoln':'cologne',
+  '1fckoln':'cologne',
+  'koln':'cologne',
+  'fcstpauli':'stpauli',
+  '1fcmagdeburg':'1fcmagdeburg',
+  '1fcnurnberg':'1fcnurnberg',
+  '1fcnuremberg':'1fcnurnberg',
+  'hansarostock':'rostock',
+  'fchansarostock':'rostock',
+  'rotweissessen':'essen',
+  'rotweisesessen':'essen',
+  'rwe':'essen',
+  'svwehenwiesbaden':'wehenwiesbaden',
+  'fcenergiecottbus':'energiecottbus',
+  'bayer04leverkusen':'bayerleverkusen',
+  'hamburgersv':'hamburg',
+  'svwerderbremen':'werderbremen',
+  '1fcunionberlin':'unionberlin',
+  'vflwolfsburg':'wolfsburg',
+  'vfbstuttgart':'vfbstuttgart',
+  'borussiadortmund':'borussiadortmund',
+  'bvb09dortmund':'borussiadortmund',
+  'borussiamonchengladbach':'gladbach',
+  'spvgggreutherfurth':'spvgggreutherfurth',
+  'greutherfurth':'greutherfurth',
+  'dynamodresden':'dynamodresden',
+  'scfreiburg':'scfreiburg',
+  'sv07elversberg':'svelversberg',
+  'svsandelversberg':'svelversberg',
+  'schalke04':'schalke04',
+  'fcaschalke04':'schalke04',
+  'rbleipzig':'rbleipzig',
+  'fcausgburg':'fcaugsburg',
+  'fcaugsburg':'fcaugsburg',
+  'sc07paderborn':'scpaderborn07',
+  'scpaderborn':'scpaderborn07',
+  '1fcheidenheim':'1fcheidenheim1846',
+  '1fcheidenheim1846':'1fcheidenheim1846',
+  '1fckaiserslautern':'kaiserslautern',
+  'fckaiserslautern':'kaiserslautern',
+  'herthabsc':'herthaberlin',
+  'herthabscberlin':'herthaberlin'
+};
+const compactLogoKey=name=>String(name||'').toLowerCase().normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g,'').replace(/ä/g,'a').replace(/ö/g,'o')
+  .replace(/ü/g,'u').replace(/ß/g,'ss').replace(/[^a-z0-9]/g,'');
+function candidatesForCrest(name){
+  const key=compactLogoKey(name),out=new Set([key]);
+  // Preserve the full exact club name first to distinguish second teams.
+  const bare=key.replace(/(?:frauen|women|damen|u2[013]|u19|u17|i{2}|2)$/,'');
+  if(bare.length>5)out.add(bare);
+  for(const candidate of [...out]){
+    if(LOCAL_ALIASES[candidate])out.add(LOCAL_ALIASES[candidate]);
+    // A leading FC/SC/SV is often absent from an international club name.
+    const prefix=candidate.replace(/^(?:1fc|fc|sc|sv|vfl|vfb|tsv|spvgg)/,'');
+    if(prefix.length>=6 && CLUB_LOGOS[prefix])out.add(prefix);
+  }
+  return [...out];
+}
+export function curatedCrest(name){
+  for(const key of candidatesForCrest(name)){
+    const value=CLUB_LOGOS[key];
+    if(value && /^https:\/\/(?:a\.espncdn\.com|r2\.thesportsdb\.com)\//.test(value))return value;
+  }
+  return null;
+}
+
 /**
  * Optional supplementary club crests from ESPN's public league team listings.
  * These are only used when the OpenLigaDB logo cannot be loaded.
