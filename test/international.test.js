@@ -46,7 +46,7 @@ test('all UEFA competitions are exposed and international catalogs deliver match
   const catalog=await handle(new Request('https://test.workers.dev/catalog/tv/defootball_uel.json'),{SEASON:'2026'},fetcher);
   const data=await catalog.json();
   assert.equal(data.metas.length,1);
-  assert(data.metas[0].poster.includes('/poster/uel/551122.svg'));
+  assert(data.metas[0].poster.includes('/poster/uel/551122.png'));
 });
 test('embedded club badge images and fallback abbreviations render in SVG cards',async()=>{
   const bytes=Uint8Array.from([137,80,78,71,13,10,26,10]);

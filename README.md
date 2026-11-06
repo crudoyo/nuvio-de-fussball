@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.4.14 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.4.15 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio TV. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -217,3 +217,12 @@ Dies nutzt die **bereits öffentlich angebotenen Addon-Endpunkte** von Sports St
 ## Vereinswappen v0.4.14
 
 Die Wappen werden zusätzlich mit einem lokalen, aus Nuvio Live Sports stammenden Katalog bekannter ESPN- und TheSportsDB-Bildadressen aufgelöst. Der Katalog enthält 1.945 normalisierte Einträge, nicht ausschließlich deutsche Mannschaften. Quelle: https://github.com/rajhodedara/live-sport-plugin/blob/main/src/data/team_logos_seed.json (MIT). Vereine erhalten eindeutige Namenszuordnungen; die generierten Spielposter und die Nuvio-Metadaten liefern nun Teamlogos mit Quellen-Fallbacks. Bei unbekannten oder nicht erreichbaren Wappen bleiben die Mannschaftskürzel. Das Fire-TV-Ergebnis muss am Gerät geprüft werden.
+
+
+## Bildkompatibilität v0.4.15
+
+Die Nuvio-TV-App kann zwar SVG prinzipiell dekodieren, aber nicht alle komplexen SVGs mit eingebetteten Bilddaten werden auf jedem Gerät identisch dargestellt. Match-Kataloge verlinken deshalb nun direkt auf **PNG-Spielposter** unter `/poster/<liga>/<matchID>.png`. Die Worker-Runtime wandelt das erzeugte SVG per `@resvg/resvg-wasm` einschließlich der bereits geladenen PNG-/JPEG-Wappen in ein Rasterbild um. Die alten `.svg`-Endpunkte bleiben erreichbar.
+
+Außerdem berücksichtigt NuvioTVs derzeitiges `MetaPreview`-Datenmodell keine zusätzlichen Felder `team1.logo` und `team2.logo`. Die auf der Startseite sichtbaren beiden Club-Wappen müssen daher bereits in der normalen Poster-Grafik stecken; die zusätzliche Metadaten-Ausgabe der vorherigen Version allein konnte das nicht leisten.
+
+Die PNG-Konvertierung nutzt eingebundene Roboto-Schriften. Quellbilder werden beim Posterabruf weiterhin einzeln heruntergeladen; bei fehlenden Wappen erscheinen Teamkürzel. Das tatsächliche Update ist nur nach dem Cloudflare-Deployment und einem Refresh des Addons sichtbar.

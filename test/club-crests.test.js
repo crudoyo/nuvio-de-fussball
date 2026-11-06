@@ -76,5 +76,5 @@ test('match metadata publishes team crest URLs to native Nuvio clients',async()=
   assert(meta.team2.logo.startsWith('https://r2.thesportsdb.com/'));
   assert.equal(meta.team1.name,match.team1.teamName);
   assert.equal(meta.team2.name,match.team2.teamName);
-  assert.match(meta.poster,/v=0\.4\.14$/);
+  assert.match(meta.poster,/\.png\?v=0\.4\.15$/);
 });

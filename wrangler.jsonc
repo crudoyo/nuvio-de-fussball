@@ -9,5 +9,13 @@
     "NATIVE_ONLY": "false",
     "NATIVE_VERIFY_MANIFESTS": "true",
     "DADDY_NATIVE_RESOLVE": "true"
-  }
+  },
+  "rules": [
+    {
+      "type": "Data",
+      "globs": [
+        "**/*.woff2"
+      ]
+    }
+  ]
 }
