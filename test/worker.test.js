@@ -5,7 +5,7 @@ import {
   encodeConfig, decodeConfig, manifestUrl, resolveStreams
 } from '../src/worker.js';
 
-const iso = new Date(Date.now() + 90 * 60_000).toISOString().replace(/Z$/, '');
+const iso = new Date().toISOString().replace(/Z$/, '');
 const fixture = {
   matchID: 9876, matchDateTimeUTC: iso, matchIsFinished: false,
   group:{groupOrderID:9,groupName:'9. Spieltag'},

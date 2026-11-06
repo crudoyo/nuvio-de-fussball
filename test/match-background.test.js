@@ -9,7 +9,7 @@ const wasm=await readFile(new URL('../node_modules/@resvg/resvg-wasm/index_bg.wa
 await initWasm(wasm);
 const solid=color=>new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="${color}"/></svg>`).render().asPng();
 const homeBadge=solid('#ff0000'),awayBadge=solid('#00ff00');
-const game={matchID:998877,matchDateTimeUTC:new Date(Date.now()+3600000).toISOString(),
+const game={matchID:998877,matchDateTimeUTC:new Date().toISOString(),
   group:{groupOrderID:9,groupName:'9. Spieltag'},
   team1:{teamName:'Detail Home',teamIconUrl:'https://crests.example/detail-home.png'},
   team2:{teamName:'Detail Away',teamIconUrl:'https://crests.example/detail-away.png'}};
@@ -54,7 +54,7 @@ test('catalog and personal detail metadata use a separate, versioned background 
     const body=await reply.json(),meta=body.meta||body.metas[0];
     assert.equal(reply.status,200);
     assert.notEqual(meta.poster,meta.background);
-    assert.equal(meta.background,`https://addon.test${path.startsWith(prefix)?prefix:''}/background/bl1/998877.png?v=0.4.19`);
+    assert.equal(meta.background,`https://addon.test${path.startsWith(prefix)?prefix:''}/background/bl1/998877.png?v=0.4.20`);
     let observed;
     const image=await handle(new Request(meta.background),{SEASON:'2026',
       __testPngRenderer:async svg=>{observed=render(svg);return observed.asPng();}},fetcher);
