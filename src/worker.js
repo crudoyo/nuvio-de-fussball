@@ -6,7 +6,8 @@
 import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
 import { makeMatchPoster } from './graphics.js';
 import { espnTeamsUrl, attachFallbackCrests, curatedCrest } from './crests.js';
-import { badgeImageUrl } from './graphics.js';
+import { badgeImageUrl, badgeData } from './graphics.js';
+import { THIRD_LIGA_CLUBS_2026, thirdLigaCrest } from './third-league-crests.js';
 import {
   getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
   diagnoseDaddyFixture
@@ -15,7 +16,7 @@ import {nativeMappedStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
-export const VERSION = '0.4.16';
+export const VERSION = '0.4.17';
 const API = 'https://api.openligadb.de';
 const MAX_UPSTREAMS = 8;
 // Public addons provide their own catalogs/stream endpoints.
@@ -307,6 +308,17 @@ export async function handle(request,env={},fetcher=fetch) {
       return json({version:VERSION,channelId:nativeCheck[1],status:result.status,
         nativeAvailable:Boolean(result.stream),checked:'entry_manifest_and_first_segment',
         devicePlaybackVerified:false,checks:result.checks},200,0);
+    }
+    if(pathname==='/debug/crests/bl3.json'){
+      // Probe the actual raster image pipeline used by Cloudflare's match posters.
+      // A valid URL is not enough: wrong MIME, oversized and blocked images fail.
+      const clubs=await Promise.all(THIRD_LIGA_CLUBS_2026.map(async club=>{
+        const imageUrl=thirdLigaCrest(club.name);
+        const image=await badgeData(imageUrl,fetcher);
+        return {club:club.name,imageUrl,usable:Boolean(image)};
+      }));
+      return json({version:VERSION,season:2026,league:'3. Liga',ok:clubs.filter(x=>x.usable).length,
+        total:clubs.length,clubs},200,0);
     }
     if(pathname==='/debug/sources.json')return json({version:VERSION,providers:await diagnoseSources(sources,fetcher,env)},200,0);
     if(pathname==='/debug/daddy-lookup.json'){
