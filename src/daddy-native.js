@@ -236,7 +236,7 @@ export async function automaticDaddyEventStreams(events,env,fetcher,options={}){
     const timeout=deadline-Date.now();
     if(timeout<=0)break;
     const results=await Promise.all(channels.slice(index,index+2).map(async channel=>{
-      const result=await resolveDaddyChannel(channel.id,fetcher,{...options,timeout,maxVariants:2});
+      const result=await resolveDaddyChannel(channel.id,fetcher,{...options,timeout,maxVariants:Object.keys(ADAPTER_NAMES).length});
       options.onDiagnostic?.(channel.id,result);
       if(!result.stream)return [];
       const variants=[result,...result.alternatives];

@@ -1,6 +1,6 @@
 # SoccerDE für Nuvio (Cloudflare Workers)
 
-**Version 0.6.5 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.6.6 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -288,4 +288,4 @@ Tabellenabfragen laufen parallel zum Spielplan, werden zehn Minuten zwischengesp
 
 ## Abrufdienst für WideIPTV und Tossequip
 
-Falls WideIPTV die Playerseiten vom Worker aus mit HTTP 403 beantwortet, kann `node scripts/daddy-wide-relay.mjs` die zwei HTML-Seiten von einem erreichbaren Rechner abrufen. Der Dienst transportiert außerdem Playlists und Videosegmente des bestätigten Tossequip-CDNs. Bei WideIPTV lädt der Worker die Medien weiterhin direkt. Der Dienst lauscht auf `127.0.0.1:18797` und verlangt `DADDY_WIDE_RELAY_TOKEN` (32 Zufallsbytes als Base64url). Stelle den Dienst über einen HTTPS-Tunnel bereit und hinterlege im Worker-Secret `DADDY_WIDE_RELAY` ein JSON-Objekt mit `origin` (HTTPS-Ursprung des Tunnels) und `token` (derselbe Wert). Für den Dauerbetrieb brauchen Dienst und Tunnel einen Rechner, der eingeschaltet bleibt.
+Falls WideIPTV oder Tossequip die Playerseiten vom Worker aus mit HTTP 403 beantworten, kann `node scripts/daddy-wide-relay.mjs` die HTML-Seiten von einem erreichbaren Rechner abrufen. Der Dienst transportiert außerdem Playlists und Videosegmente des bestätigten Tossequip-CDNs. Bei WideIPTV lädt der Worker die Medien direkt. Der Dienst lauscht auf `127.0.0.1:18797` und verlangt `DADDY_WIDE_RELAY_TOKEN` (32 Zufallsbytes als Base64url). Stelle den Dienst über einen HTTPS-Tunnel bereit und hinterlege im Worker-Secret `DADDY_WIDE_RELAY` ein JSON-Objekt mit `origin` (HTTPS-Ursprung des Tunnels) und `token` (derselbe Wert). Für den Dauerbetrieb brauchen Dienst und Tunnel einen Rechner, der eingeschaltet bleibt.

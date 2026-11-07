@@ -16,6 +16,15 @@ export function widePlayerPage(raw,base){
   return null;
 }
 
+export function tossequipPlayerPage(raw,base){
+  try{
+    const url=new URL(raw,base);
+    if(url.origin===TOSSEQUIP&&!url.username&&!url.password&&!url.hash&&!url.search&&
+      /^\/e\/[a-z0-9]{1,40}$/.test(url.pathname))return url;
+  }catch{}
+  return null;
+}
+
 export function tossequipMediaUrl(raw){
   try{
     if(String(raw).length>4096)return null;
@@ -42,11 +51,11 @@ export function withDaddyRelay(fetcher,setting){
   const routed=(raw,options)=>{
     const headers=new Headers(options?.headers);
     const referer=headers.get('referer'),range=headers.get('range');
-    const target=widePlayerPage(raw),media=referer===TOSSEQUIP+'/'&&tossequipMediaUrl(raw);
-    if(!target&&!media)return fetcher(raw,options);
-    const path=target?target.pathname+target.search:TOSSEQUIP_RELAY_PATH+media.host+media.pathname+media.search;
+    const wide=widePlayerPage(raw),cast=tossequipPlayerPage(raw),media=referer===TOSSEQUIP+'/'&&tossequipMediaUrl(raw);
+    if(!wide&&!cast&&!media)return fetcher(raw,options);
+    const path=wide?wide.pathname+wide.search:TOSSEQUIP_RELAY_PATH+(cast?cast.pathname.slice(1):media.host+media.pathname+media.search);
     return fetcher(relay.origin+path,{redirect:'manual',signal:options?.signal,headers:{Authorization:'Bearer '+token,
-      ...(target&&referer?{'X-Daddy-Referer':referer}:{}),...(media&&range?{Range:range}:{})}});
+      ...((wide||cast)&&referer?{'X-Daddy-Referer':referer}:{}),...(media&&range?{Range:range}:{})}});
   };
   relayFetchers.set(fetcher,{setting,fetcher:routed});
   return routed;

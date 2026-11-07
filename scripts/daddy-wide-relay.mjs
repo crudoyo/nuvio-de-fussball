@@ -4,7 +4,7 @@ import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {DADDY_PRIMARY,daddyChannelPage,daddySiteUrl} from '../src/daddy-domains.js';
 import {readBounded} from '../src/daddy-media.js';
-import {WIDE_PLAYER,TOSSEQUIP,TOSSEQUIP_RELAY_PATH,tossequipMediaUrl,widePlayerPage,wideRelayTokenPattern} from '../src/daddy-wide.js';
+import {WIDE_PLAYER,TOSSEQUIP,TOSSEQUIP_RELAY_PATH,tossequipMediaUrl,tossequipPlayerPage,widePlayerPage,wideRelayTokenPattern} from '../src/daddy-wide.js';
 
 const token=process.env.DADDY_WIDE_RELAY_TOKEN;
 if(!token||!wideRelayTokenPattern.test(token))throw new Error('DADDY_WIDE_RELAY_TOKEN must be 32 random bytes encoded as base64url');
@@ -17,12 +17,14 @@ createServer(async (request,response)=>{
   if(request.method!=='GET'||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)){
     response.writeHead(404).end();return;
   }
-  const page=widePlayerPage(request.url,WIDE_PLAYER);
-  const media=request.url.startsWith(TOSSEQUIP_RELAY_PATH)&&tossequipMediaUrl('https://'+request.url.slice(TOSSEQUIP_RELAY_PATH.length));
+  const castPath=request.url.startsWith(TOSSEQUIP_RELAY_PATH)&&request.url.slice(TOSSEQUIP_RELAY_PATH.length);
+  const castPage=castPath&&tossequipPlayerPage('/'+castPath,TOSSEQUIP);
+  const page=widePlayerPage(request.url,WIDE_PLAYER)||castPage;
+  const media=castPath&&tossequipMediaUrl('https://'+castPath);
   if(!page&&!media){
     response.writeHead(404).end();return;
   }
-  const wrapper=page?.pathname==='/daddy.php';
+  const wrapper=page?.pathname==='/daddy.php'||castPage;
   const parent=daddySiteUrl(request.headers['x-daddy-referer']);
   const channelId=parent&&/(?:stream-|\bid=)([1-9]\d{0,5})(?:\.php)?$/.exec(parent.pathname+parent.search)?.[1];
   const referer=media?TOSSEQUIP+'/':wrapper

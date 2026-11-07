@@ -3,7 +3,7 @@
  */
 import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyRequestContext,withDaddyFallback,withDaddyAbort} from './daddy-domains.js';
 import {readBounded,decodeDaddyMedia,isMp4,mediaRange} from './daddy-media.js';
-import {WIDE_PLAYER,TOSSEQUIP,tossequipMediaUrl,widePlayerPage} from './daddy-wide.js';
+import {WIDE_PLAYER,TOSSEQUIP,tossequipMediaUrl,tossequipPlayerPage,widePlayerPage} from './daddy-wide.js';
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const VARIANTS=new Set(['stream','cast','watch','plus','casting','player','hub']);
 const EDGE='https://edge.wedd48c.top';
@@ -25,7 +25,7 @@ export function adapterPlayerUrl(raw,channelId,base){
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)return null;
     if(u.hostname==='dembed.st'&&u.pathname==='/premiumtv/daddy.php'&&u.searchParams.get('id')===String(channelId))return u.href;
     if(u.hostname==='assetrage.net'&&/^\/(?:embed|player|e)\//.test(u.pathname))return u.href;
-    if(u.origin===TOSSEQUIP&&/^\/e\/[a-z0-9]{1,40}$/.test(u.pathname)&&!u.search)return u.href;
+    if(tossequipPlayerPage(u))return u.href;
     if(u.pathname==='/daddy.php'&&widePlayerPage(u))return u.href;
   }catch{}return null;
 }

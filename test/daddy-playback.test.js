@@ -116,12 +116,11 @@ test('a later conference channel exposes both verified WideIPTV and Tossequip pl
   const fetcher=async (raw,options)=>{
     const url=String(raw);requests.push(url);
     if([site+'/stream/stream-901.php',site+'/stream/stream-902.php'].includes(url))return new Response('No media');
-    if([site+'/watch.php?id=901',site+'/watch.php?id=902'].includes(url))return new Response('',{status:403});
+    if([site+'/watch.php?id=901',site+'/watch.php?id=902',site+'/watch.php?id=903'].includes(url))return new Response('',{status:403});
     if(url===site+'/stream/stream-903.php')return new Response(
       `<button data-url="${site}/cast/stream-903.php">Cast</button><button data-url="${site}/player/stream-903.php">Player</button>`);
     if(url===site+'/player/stream-903.php')return new Response(`<iframe id="thatframe" src="${wide}/daddy.php?stream=Conference"></iframe>`);
     if(url===site+'/cast/stream-903.php')return new Response('<iframe id="thatframe" src="https://tossequip.net/e/test903"></iframe>');
-    if(url==='https://tossequip.net/e/test903')return new Response(`var _econfig='${castConfig}';`);
     if(url.startsWith(relay+'/')){
       assert.equal(options.redirect,'manual');
       assert.equal(options.headers.Authorization,'Bearer '+token);
@@ -130,6 +129,10 @@ test('a later conference channel exposes both verified WideIPTV and Tossequip pl
         return new Response('<iframe src="/player/Conference"></iframe>');
       }
       if(url===relay+'/player/Conference')return new Response(`streamUrl: "${cdn}//Conference//index.m3u8?token=fixture"`);
+      if(url===relay+'/_tossequip/e/test903'){
+        assert.equal(options.headers['X-Daddy-Referer'],site+'/cast/stream-903.php');
+        return new Response(`var _econfig='${castConfig}';`);
+      }
       if(url===castManifest.replace('https://',relay+'/_tossequip/'))return new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\n${castSegment}`);
       if(url===castSegment.replace('https://',relay+'/_tossequip/'))return new Response(castBytes,{headers:{'content-length':castBytes.length}});
     }
