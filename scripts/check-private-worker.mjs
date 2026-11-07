@@ -140,9 +140,9 @@ try{
   const reservationsHtml=await Promise.all(reservations.map(r=>r.text()));
   const reserved=reservationsHtml[reservations.findIndex(r=>r.status===201)];
   const pending=field(reserved,'invite-url');
-  const pendingSlot=slotFor(reserved,friend,'Einladung 2');
+  const pendingSlot=slotFor(reserved,friend,'Einladung offen');
   assert(pending&&pendingSlot,'Second invitation without a deadline reserves a slot');
-  assert.match(reserved,/Einladung offen · ohne Ablaufdatum/);
+  assert.match(reserved,/Einladung offen<\/h3><p class="hint">ohne Ablaufdatum/);
   await admin('limit',{friend,limit:'1'},409);
   await admin('revoke',{friend,slot:pendingSlot},200);
   await expect(await request(pending),404,'Revoked invitation without a deadline cannot be opened');
@@ -152,7 +152,7 @@ try{
   assert(laptop&&laptop!==tvImport,'Each device receives a distinct key');
   await admin('limit',{friend,limit:'1'},409);
   const overview=await expect(await request('/admin',{cookie:session}),200,'List devices');
-  assert(overview.includes('2 von 2 Plätzen belegt oder reserviert'));
+  assert(overview.includes('2 / 2 belegt'));
   const tvSlot=slotFor(overview,friend,'Schlüssel 1');
   assert(tvSlot,'First key listed');
   await admin('revoke',{friend,slot:tvSlot},200);

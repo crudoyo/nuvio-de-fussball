@@ -67,23 +67,23 @@ async function handleAdmin(request,url,store,secret){
   }
   const friend=form.get('friend')||'',slot=form.get('slot')||'',limit=form.get('limit');
   const hours=hoursOptions.get(form.get('hours'));
-  const show=async (message,status=200,invite)=>html(adminPage(await store.list(),{
+  const show=async (message='',status=200,invite)=>html(adminPage(await store.list(),{
     message,...(invite?{inviteUrl:url.origin+'/e/'+invite.token,expires:invite.expires}:{})}),status);
   if(action==='friend'){
     const name=(form.get('name')||'').trim();
     if(!name||name.length>48||!limitOptions.has(limit)||hours===undefined)
-      return show('Bitte Namen, Geräteplätze und Gültigkeit prüfen.',400);
-    return show('Freund angelegt und einen Platz reserviert.',201,await store.createFriend(name,Number(limit),hours));
+      return show('Bitte Namen, Schlüsselanzahl und Gültigkeit prüfen.',400);
+    return show('',201,await store.createFriend(name,Number(limit),hours));
   }
   if(!accessIdPattern.test(friend))return text('Ungültiger Freund',400);
   if(action==='invite'){
     if(hours===undefined)return text('Ungültige Gültigkeit',400);
     const invite=await store.invite(friend,hours);
-    return invite?show('Ein Geräteplatz reserviert.',201,invite):show('Kein freier Geräteplatz oder Zugang gesperrt.',409);
+    return invite?show('',201,invite):show('Kein freier Platz oder Zugang gesperrt.',409);
   }
   if(action==='limit'){
     if(!limitOptions.has(limit))return text('Ungültiges Limit',400);
-    return await store.setLimit(friend,Number(limit))?show('Geräteplätze gespeichert.'):show('Erst Plätze freigeben, dann das Limit senken.',409);
+    return await store.setLimit(friend,Number(limit))?show('Limit gespeichert.'):show('Erst Plätze freigeben, dann das Limit senken.',409);
   }
   if(action==='block'){
     const blocked=form.get('blocked');
@@ -91,7 +91,7 @@ async function handleAdmin(request,url,store,secret){
     return await store.setBlocked(friend,blocked==='1')?show(blocked==='1'?'Zugang gesperrt.':'Zugang freigegeben.'):missing();
   }
   if(!accessIdPattern.test(slot))return text('Ungültiger Geräteplatz',400);
-  return await store.revoke(friend,slot)?show('Geräteplatz freigegeben.'):missing();
+  return await store.revoke(friend,slot)?show():missing();
 }
 export async function handlePrivateAccess(request,env,addon){
   const url=new URL(request.url),path=url.pathname;
