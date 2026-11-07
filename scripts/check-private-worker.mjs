@@ -46,9 +46,9 @@ try{
   {cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
   for(const stream of [child.stdout,child.stderr])stream.on('data',part=>{log=(log+part).slice(-4500);});
   let session='';
-  async function request(path,{body,cookie='',from=origin,method=body?'POST':'GET'}={}){
+  async function request(path,{body,cookie='',from=origin,client,method=body?'POST':'GET'}={}){
     return fetch(new URL(path,origin),{method,redirect:'manual',
-      headers:{...(cookie?{cookie}:{}),...(method==='POST'?{origin:from}:{})},
+      headers:{...(cookie?{cookie}:{}),...(method==='POST'?{origin:from}:{}),...(client?{'user-agent':client}:{})},
       body:body?new URLSearchParams(body):undefined,signal:AbortSignal.timeout(17000)});
   }
   async function expect(response,status,label){
@@ -101,24 +101,27 @@ try{
   assert(friend&&invite,'Friend and invitation were created');
   assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(invite),'Cleartext invitation only shown at creation');
   await admin('block',{friend,blocked:'1'},403,'https://other.example');
-  const opening=await expect(await request(invite),200,'Open invitation');
-  assert(opening.includes('Gerät aktivieren'),'Invitation includes activation form');
+  const phone='Nuvio test mobile browser',tv='Nuvio test television';
+  const opening=await expect(await request(invite,{client:phone}),200,'Open invitation on phone');
+  assert(opening.includes('Einladung einlösen')&&opening.includes('Name des Zielgeräts'),'Invitation allows manual target device selection');
   await expect(await request(invite),200,'Preview must not consume invite');
   const selected=['defootball_bl3_sunday','defootball_bl1_friday'];
-  const activation=[['deviceName','Tablet'],...selected.map(id=>['catalog',id])];
+  const activation=[['deviceName','Wohnzimmer-TV'],...selected.map(id=>['catalog',id])];
   await expect(await request(invite,{body:activation,from:'https://other.example'}),403,'Cross-origin activation');
   await expect(await request(invite,{body:{deviceName:'Tablet'}}),400,'Invalid configuration must not consume invite');
-  const simultaneous=await Promise.all([request(invite,{body:activation}),request(invite,{body:activation})]);
+  const simultaneous=await Promise.all([request(invite,{body:activation,client:phone}),request(invite,{body:activation,client:phone})]);
   assert.equal(simultaneous.filter(r=>r.status===200).length,1,'Exactly one concurrent redemption can succeed');
   assert(simultaneous.every(r=>[200,404,410].includes(r.status)),'Only the winning request receives a key');
   const [install]=await Promise.all(simultaneous.sort((a,b)=>a.status-b.status).map(r=>r.text()));
-  const tablet=field(install,'manifest-url');
-  assert(tablet?.includes('/a/')&&tablet.endsWith('/manifest.json'),'Protected import URL');
-  for(const app of ['nuvio','stremio'])assert.equal(href(install,'install-'+app),tablet.replace('http:',app+':'),'App link preserves full private path');
-  const manifest=JSON.parse(await expect(await request(tablet),200,'Private manifest'));
+  const tvImport=field(install,'manifest-url');
+  assert(tvImport?.includes('/a/')&&tvImport.endsWith('/manifest.json'),'Protected import URL');
+  assert(install.includes('Auf dem TV oder einem anderen Gerät installieren'),'Import instructions cover another device');
+  for(const app of ['nuvio','stremio'])assert.equal(href(install,'install-'+app),tvImport.replace('http:',app+':'),'App link preserves full private path');
+  const manifest=JSON.parse(await expect(await request(tvImport,{client:tv}),200,'Import on TV after phone activation'));
+  await expect(await request(tvImport,{client:tv}),200,'Installed TV can fetch the manifest again');
   assert.equal(manifest.version,VERSION);
   assert.deepEqual(manifest.catalogs.map(c=>c.id),selected);
-  const prefix=new URL(tablet).pathname.split('/').slice(0,3).join('/');
+  const prefix=new URL(tvImport).pathname.split('/').slice(0,3).join('/');
   const edit=await expect(await request(href(install,'edit-settings')),200,'Restore private settings');
   assert(edit.includes('action="'+prefix+'/generate"'),'Edit form retains key');
   assert(edit.includes('value="defootball_bl3_sunday" checked'),'Edit form retains selection');
@@ -133,21 +136,21 @@ try{
   const second=field(reservationsHtml[reservations.findIndex(r=>r.status===201)],'invite-url');
   assert(second,'Second device invitation created');
   const laptop=field(await expect(await request(second,{body:{deviceName:'Laptop',catalog:'defootball_bl1'}}),200,'Activate laptop'),'manifest-url');
-  assert(laptop&&laptop!==tablet,'Each device receives a distinct key');
+  assert(laptop&&laptop!==tvImport,'Each device receives a distinct key');
   await admin('limit',{friend,limit:'1'},409);
   const overview=await expect(await request('/admin',{cookie:session}),200,'List devices');
   assert(overview.includes('2 von 2 Plätzen belegt oder reserviert'));
-  const tabletSlot=/<h3>Tablet<\/h3>[\s\S]*?name="slot" value="([^"]+)"/.exec(overview)?.[1];
-  assert(tabletSlot,'Tablet slot listed');
-  await admin('revoke',{friend,slot:tabletSlot},200);
-  await expect(await request(tablet),403,'Tablet is revoked');
+  const tvSlot=/<h3>Wohnzimmer-TV<\/h3>[\s\S]*?name="slot" value="([^"]+)"/.exec(overview)?.[1];
+  assert(tvSlot,'Tablet slot listed');
+  await admin('revoke',{friend,slot:tvSlot},200);
+  await expect(await request(tvImport),403,'TV is revoked');
   await expect(await request(laptop),200,'Laptop remains authorized');
   await admin('limit',{friend,limit:'1'},200);
   await admin('block',{friend,blocked:'1'},200);
   await expect(await request(laptop),403,'Friend-wide pause blocks active laptop');
   await admin('block',{friend,blocked:'0'},200);
   await expect(await request(laptop),200,'Laptop works after unpause');
-  await expect(await request(tablet),403,'Previously revoked tablet stays revoked');
+  await expect(await request(tvImport),403,'Previously revoked TV stays revoked');
   await admin('logout',{},303);
   console.log('Private workerd/D1 verified: single-use invites, concurrent slot limits, per-device revocation, protected imports and admin sessions.');
 }finally{
