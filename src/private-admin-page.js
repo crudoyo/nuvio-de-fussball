@@ -2,7 +2,8 @@ import {NO_INVITE_EXPIRY} from './private-store.js';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=value=>new Intl.DateTimeFormat('de-DE',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Berlin'}).format(value);
-const isExpired=(slot,now)=>slot.activated_at===null&&slot.expires_at!==NO_INVITE_EXPIRY&&slot.expires_at<=now;
+const deadline=slot=>slot.setup_expires_at??slot.expires_at;
+const isExpired=(slot,now)=>slot.activated_at===null&&deadline(slot)!==NO_INVITE_EXPIRY&&deadline(slot)<=now;
 const counts=(slots,now)=>slots.filter(slot=>slot.revoked_at===null&&!isExpired(slot,now)).length;
 const validity=expires=>expires===NO_INVITE_EXPIRY?'ohne Ablaufdatum':'bis '+date(expires)+' (Berlin)';
 const events={friend_created:'Freund angelegt',friend_blocked:'Zugang gesperrt',friend_unblocked:'Zugang freigegeben',
@@ -21,19 +22,26 @@ export function adminLogin(message=''){
   return page(`<section class="login"><p class="brand">DEUTSCHER FUSSBALL</p><h1>Privater Zugang</h1><div class="panel"><h2>Verwaltung anmelden</h2>${message?`<p class="danger" role="alert">${escape(message)}</p>`:''}
     <form method="post" action="/admin/login"><label>Verwaltungsschlüssel<input type="password" name="key" autocomplete="current-password" maxlength="43" required></label><button class="primary" type="submit">Anmelden</button></form></div></section>`,'Anmelden');
 }
-export function adminPage(data,{message='',inviteUrl='',expires}={}){
+export function configurationLogin(message=''){
+  return page(`<section class="login"><p class="brand">DEUTSCHER FUSSBALL</p><h1>Konfiguration</h1><div class="panel">
+    ${message?`<p class="danger" role="alert">${escape(message)}</p>`:''}
+    <form method="post" action="/configure/login"><label>Einmalpasswort<input type="password" name="code" autocomplete="one-time-code" maxlength="27" required></label><button class="primary" type="submit">Kataloge auswählen</button></form></div></section>`,'Konfiguration');
+}
+export function adminPage(data,{message='',configureUrl='',invitationCode='',expires}={}){
   const {friends,slots,audit,now}=data;
   const friendRows=friends.map(friend=>{
     const own=slots.filter(s=>s.friend_id===friend.id),used=counts(own,now);
     const slotRows=own.map((slot,index)=>{
-      const active=slot.activated_at!==null,expired=isExpired(slot,now);
+      const active=slot.activated_at!==null,expired=isExpired(slot,now),claimed=slot.setup_expires_at!==null;
       const status=slot.revoked_at!==null?(active?'Schlüssel gesperrt':'Einladung zurückgezogen'):
-        expired?'Einladung abgelaufen':friend.blocked?(active?'Zugang pausiert':'Einladung pausiert'):active?'Schlüssel aktiv':'Einladung offen';
+        expired?(claimed?'Konfiguration abgelaufen':'Einladung abgelaufen'):
+        friend.blocked?(active?'Zugang pausiert':'Einladung pausiert'):
+        active?'Schlüssel aktiv':claimed?'Konfiguration läuft':'Einladung offen';
       const action=slot.revoked_at===null&&!expired?form('/admin/revoke',
         `<button class="danger" type="submit">${active?'Schlüssel sperren':'Einladung zurückziehen'}</button>`,{friend:friend.id,slot:slot.id}):'';
       const label=active?'Schlüssel '+(index+1):status;
       let detail=active?status:'';
-      if(!active&&!expired&&slot.revoked_at===null)detail=validity(slot.expires_at);
+      if(!active&&!expired&&slot.revoked_at===null)detail=validity(deadline(slot));
       return `<div class="slot row"><div><h3>${escape(label)}</h3>${detail?`<p class="hint">${escape(detail)}</p>`:''}</div>${action}</div>`;
     }).join('');
     return `<section class="panel" id="friend-${escape(friend.id)}"><div class="row"><div><h2>${escape(friend.name)}</h2><p class="hint">${used} / ${friend.slot_limit} belegt · ${friend.blocked?'Gesperrt':'Freigegeben'}</p></div>
@@ -44,12 +52,20 @@ export function adminPage(data,{message='',inviteUrl='',expires}={}){
   }).join('');
   return page(`<div class="row"><p class="brand">DEUTSCHER FUSSBALL</p>${form('/admin/logout','<button type="submit">Abmelden</button>')}</div><div class="heading"><h1>Privater Zugang</h1></div>
     ${message?`<p class="message" role="status">${escape(message)}</p>`:''}
-    ${inviteUrl?`<section class="panel"><h2>Einladung bereit</h2><p class="hint">Einmal einlösbar · ${escape(validity(expires))}</p><label>Einladungslink<input id="invite-url" type="url" readonly value="${escape(inviteUrl)}"></label><div class="actions" style="margin-top:10px"><button type="button" id="copy-invite">Einladungslink kopieren</button><span id="copy-feedback" class="hint" role="status"></span></div></section>`:''}
+    ${invitationCode?`<section class="panel"><h2>Einladung bereit</h2><p class="hint">Einmal einlösbar · ${escape(validity(expires))}</p><label>Konfigurationsseite<input id="configure-url" type="url" readonly value="${escape(configureUrl)}"></label><label>Einmalpasswort<input id="invitation-code" type="text" readonly value="${escape(invitationCode)}"></label><div class="actions" style="margin-top:10px"><button type="button" id="copy-invite">Einladung kopieren</button><span id="copy-feedback" class="hint" role="status"></span></div></section>`:''}
     <section class="panel"><h2>Einladung bereitstellen</h2>${form('/admin/friend',`<label>Name<input name="name" maxlength="48" required></label><label>Max. Schlüssel<select name="limit">${limits(2)}</select></label>${expiry}<button class="primary" type="submit">Einladung erstellen</button>`)}</section>
     ${friendRows}
     <details class="panel"><summary>Verwaltungsprotokoll</summary>${audit.length?`<ol>${audit.map(e=>`<li>${escape(date(e.at))} · ${escape(e.name)} · ${escape(events[e.event]||e.event)}</li>`).join('')}</ol>`:'<p class="hint">Noch keine Einträge.</p>'}</details>`,
-    'Verwaltung',inviteUrl?`<script>
-      const input=document.getElementById('invite-url'),status=document.getElementById('copy-feedback');
-      document.getElementById('copy-invite').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(input.value);status.textContent='Einladung kopiert.';}catch{input.focus();input.select();status.textContent='Einladung markiert. Bitte kopieren.';}});
+    'Verwaltung',invitationCode?`<script>
+      const url=document.getElementById('configure-url'),code=document.getElementById('invitation-code'),status=document.getElementById('copy-feedback');
+      document.getElementById('copy-invite').addEventListener('click',async()=>{
+        try{
+          await navigator.clipboard.writeText(url.value+'\\nEinmalpasswort: '+code.value);
+          status.textContent='Einladung kopiert.';
+        }catch{
+          code.focus();code.select();
+          status.textContent='Einmalpasswort markiert.';
+        }
+      });
     </script>`:'');
 }

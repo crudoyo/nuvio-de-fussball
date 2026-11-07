@@ -7,7 +7,7 @@ import {newAccessToken} from '../src/private-store.js';
 test('private mode closes unkeyed routes even with missing bindings, and does not contact upstreams',async()=>{
   const legacy='/u/'+encodeSettings({m:[],c:['defootball_bl1']});
   const fetcher=()=>assert.fail('anonymous request must never fetch an upstream');
-  for(const path of ['/','/configure','/generate','/manifest.json',legacy+'/manifest.json',legacy+'/configure',
+  for(const path of ['/','/generate','/manifest.json',legacy+'/manifest.json',legacy+'/configure',
     '/catalog/tv/defootball_bl1.json','/meta/tv/defootball_bl1_42.json','/stream/tv/defootball_bl1_42.json',
     '/debug/sources.json','/poster/bl1/42.png','/background/bl1/42.png','/daddy/live/426.m3u8',
     '/daddy/resource/426/media/abcdef.ts','/health']){
@@ -16,7 +16,8 @@ test('private mode closes unkeyed routes even with missing bindings, and does no
     assert.equal(response.headers.get('cache-control'),'private, no-store');
     assert.match(response.headers.get('x-robots-tag'),/noindex/);
   }
-  assert.equal((await handle(new Request('https://addon.example/admin'),{PRIVATE_ACCESS:'true'},fetcher)).status,503);
+  for(const path of ['/admin','/configure','/configure/login'])
+    assert.equal((await handle(new Request('https://addon.example'+path),{PRIVATE_ACCESS:'true'},fetcher)).status,503);
   for(const env of [{PRIVATE_DB:{}},{PRIVATE_ADMIN_KEY:newAccessToken()}])
     assert.equal((await handle(new Request('https://addon.example/manifest.json'),env,fetcher)).status,404);
 });

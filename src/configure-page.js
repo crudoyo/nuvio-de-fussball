@@ -71,7 +71,14 @@ export function configurePage({version,catalogs,settings={m:[]},browserAllowed=t
   const rows=sortedRows(catalogs,settings),chosen=new Set(settings.c||catalogs.map(c=>c.id));
   const groups=[...new Map(rows.map(c=>[c.league,c.leagueName])).entries()];
   const showBrowser=browserAllowed&&settings.b!==false;
-  const content=`<header><h1>Dein Fußball.<br>Deine Startseite.</h1><p>${invite?'Einladung für '+escape(invite.name)+'. Wähle deine Kataloge und löse die Einladung ein.':'Wähle deine Wettbewerbe und Kataloge. Lege die Reihenfolge fest und übernimm deine Auswahl direkt in Nuvio oder Stremio.'}</p></header>
+  const intro=invite?.claimed?'Wähle deine Kataloge und erstelle den Importlink.':invite
+    ?'Einladung für '+escape(invite.name)+'. Wähle deine Kataloge und löse die Einladung ein.'
+    :'Wähle deine Wettbewerbe und Kataloge. Lege die Reihenfolge fest und übernimm deine Auswahl direkt in Nuvio oder Stremio.';
+  const button=invite?.claimed?'Importlink erstellen':invite?'Einladung einlösen':'Installationslinks erstellen';
+  const hint=invite?.claimed?'Du kannst die Import-URL anschließend auf einem anderen Gerät verwenden.':invite
+    ?'Die Einladung kann einmal eingelöst werden. Du kannst die Import-URL anschließend auf einem anderen Gerät verwenden.'
+    :'Danach kannst du direkt in der App installieren oder die persönliche Import-URL kopieren.';
+  const content=`<header><h1>Dein Fußball.<br>Deine Startseite.</h1><p>${intro}</p></header>
   ${error?`<div class="error" role="alert">${escape(error)}</div>`:''}
   <form id="config-form" method="post" action="${escape(invite?.action||accessPrefix+'/generate')}"><input type="hidden" name="customize" value="1"><div class="layout"><div>
   <section class="card" id="catalog-card" aria-labelledby="catalog-heading"><h2 id="catalog-heading">Kataloge & Reihenfolge</h2><p class="intro">Wähle einzelne Reihen oder einen ganzen Wettbewerb. Die Pfeile verschieben deine ausgewählten Kataloge.</p>
@@ -87,7 +94,7 @@ export function configurePage({version,catalogs,settings={m:[]},browserAllowed=t
   </div><aside class="side"><section class="card" aria-labelledby="selection-heading"><h2 id="selection-heading">Deine Auswahl</h2><div class="total"><output id="catalog-count" aria-live="polite">${chosen.size}</output></div><p class="caption">Kataloge für deine Startseite</p>
   <label class="check-label"><input type="checkbox" name="browser"${showBrowser?' checked':''}${!browserAllowed?' disabled':''}><span>Browser-Ersatzoptionen anzeigen<small>Direktstreams stehen zuerst. Ausgeschaltet erscheinen ausschließlich Direktoptionen.</small></span></label>
   <p id="selection-empty" class="error" tabindex="-1"${chosen.size?' hidden':''}>Bitte mindestens einen Katalog auswählen.</p>
-  <div style="margin-top:23px"><button class="button" id="generate" type="submit"${chosen.size?'':' disabled'}>${invite?'Einladung einlösen':'Installationslinks erstellen'} <span aria-hidden="true">→</span></button></div><p class="hint">${invite?'Die Einladung kann einmal eingelöst werden. Du kannst die Import-URL anschließend auf einem anderen Gerät verwenden.':'Danach: direkt in der App installieren oder die persönliche Import-URL kopieren. Deine Auswahl steckt im Link.'}</p></section></aside></div></form>`;
+  <div style="margin-top:23px"><button class="button" id="generate" type="submit"${chosen.size?'':' disabled'}>${button} <span aria-hidden="true">→</span></button></div><p class="hint">${hint}</p></section></aside></div></form>`;
   return shell(version,content,CONFIG_SCRIPT,false,Boolean(accessPrefix||invite));
 }
 export function installationPage({version,url,settings,catalogs,browserAllowed=true,privateMode=false}){

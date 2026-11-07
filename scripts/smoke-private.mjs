@@ -21,7 +21,13 @@ while(Date.now()<deadline){
   await delay(3000);
 }
 assert(ready,'Private admin login not confirmed within deployment window');
-for(const path of ['/','/configure','/manifest.json','/u/'+encodeSettings({m:[]})+'/manifest.json',
+const configure=await get('/configure');
+assert.equal(configure.status,200);
+assert.match(configure.headers.get('cache-control')||'',/no-store/);
+const loginPage=await configure.text();
+assert.match(loginPage,/Einmalpasswort/);
+assert.doesNotMatch(loginPage,/name="catalog"/);
+for(const path of ['/','/manifest.json','/u/'+encodeSettings({m:[]})+'/manifest.json',
   '/catalog/tv/defootball_bl1.json','/stream/tv/defootball_bl1_42.json','/poster/bl1/42.png',
   '/debug/sources.json','/daddy/live/426.m3u8','/daddy/resource/426/media/abcdef.ts']){
   const response=await get(path);

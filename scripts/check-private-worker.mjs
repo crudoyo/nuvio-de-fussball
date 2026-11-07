@@ -7,7 +7,7 @@ import {createServer} from 'node:net';
 import {basename,dirname,join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath} from 'node:url';
-import {accessHash,newAccessToken} from '../src/private-store.js';
+import {accessHash,invitationCodePattern,newAccessToken} from '../src/private-store.js';
 import {encodeSettings} from '../src/addon-config.js';
 import {VERSION} from '../src/worker.js';
 
@@ -19,7 +19,7 @@ const directory=await mkdtemp(join(parent,'private-test-'));
 const cli=join(cwd,'node_modules','wrangler','bin','wrangler.js');
 const flags=['--local','--config','wrangler.private.jsonc','--persist-to',directory];
 const adminKey=newAccessToken();
-const redact=value=>String(value??'').replace(/[A-Za-z0-9_-]{43}/g,'[redacted]');
+const redact=value=>String(value??'').replace(/NV-[A-Za-z0-9_-]{24}|[A-Za-z0-9_-]{43}/g,'[redacted]');
 function wrangler(args){
   const result=spawnSync(process.execPath,[cli,...args,...flags],{cwd,encoding:'utf8',windowsHide:true,timeout:45000});
   if(result.status!==0)throw Error('Local D1 setup failed: '+redact(result.error||result.stderr||result.stdout));
@@ -36,10 +36,18 @@ let child,log='';
 try{
   wrangler(['d1','migrations','apply','PRIVATE_DB']);
   const expiredFriend=crypto.randomUUID(),expiredToken=newAccessToken(),past=Date.now()-1000;
+  const legacyFriend=crypto.randomUUID(),legacyToken=newAccessToken();
+  const setupFriend=crypto.randomUUID(),expiredCode='NV-'+newAccessToken().slice(0,24),expiredSetup=newAccessToken();
   wrangler(['d1','execute','PRIVATE_DB','--command',
     `INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${expiredFriend}','Ablaufprobe',1,${past});
     INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
-    VALUES('${crypto.randomUUID()}','${expiredFriend}','${await accessHash(expiredToken)}',${past},${past});`]);
+    VALUES('${crypto.randomUUID()}','${expiredFriend}','${await accessHash(expiredToken)}',${past},${past});
+    INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${legacyFriend}','Bisheriger Einladungslink',1,${past});
+    INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
+    VALUES('${crypto.randomUUID()}','${legacyFriend}','${await accessHash(legacyToken)}',0,${past});
+    INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${setupFriend}','Abgelaufene Konfiguration',1,${past});
+    INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at,setup_hash,setup_expires_at)
+    VALUES('${crypto.randomUUID()}','${setupFriend}','${await accessHash(expiredCode)}',0,${past},'${await accessHash(expiredSetup)}',${past});`]);
   const port=await freePort(),origin=`http://127.0.0.1:${port}`;
   child=spawn(process.execPath,[cli,'dev',...flags,'--ip','127.0.0.1','--port',String(port),
     '--var','PRIVATE_ADMIN_KEY:'+adminKey,'--log-level','error','--show-interactive-dev-session','false'],
@@ -81,11 +89,22 @@ try{
     await delay(400);
   }
   assert(ready,'Private workerd did not start: '+redact(log));
-  for(const path of ['/','/configure','/manifest.json','/u/'+encodeSettings({m:[]})+'/manifest.json',
+  for(const path of ['/','/manifest.json','/u/'+encodeSettings({m:[]})+'/manifest.json',
     '/poster/bl1/42.png','/stream/tv/defootball_bl1_42.json','/debug/sources.json','/daddy/live/426.m3u8']){
     await expect(await request(path),404,'Public route must stay closed');
   }
+  const configure='/configure',configurationLogin=configure+'/login';
+  const gate=await expect(await request(configure),200,'Shared configuration address');
+  assert.match(gate,/Einmalpasswort/);
+  assert.doesNotMatch(gate,/name="catalog"/);
+  await expect(await request(configure,{body:{catalog:'defootball_bl1'}}),403,'Anonymous configuration submission');
+  await expect(await request(configurationLogin,{body:{code:expiredCode}}),403,'Expired session never makes a used password reusable');
+  const expiredGate=await expect(await request(configure,{cookie:'__Secure-nuvio-setup='+expiredSetup}),200,'Expired configuration session');
+  assert.doesNotMatch(expiredGate,/name="catalog"/);
   await expect(await request('/e/'+expiredToken),404,'Expired invitation');
+  assert.match(await expect(await request('/e/'+legacyToken),200,'Open existing invitation'),/Einladung einlösen/);
+  await expect(await request('/e/'+legacyToken,{body:{catalog:'defootball_bl1'}}),200,'Redeem existing invitation');
+  await expect(await request('/e/'+legacyToken),404,'Existing invitation is consumed');
   await expect(await request('/admin/friend',{body:{name:'Test',limit:'2',hours:'72'}}),403,'Unauthenticated admin');
   await expect(await request('/admin/login',{body:{key:adminKey},from:'https://other.example'}),403,'Cross-origin login');
   await expect(await request('/admin/login',{body:{key:adminKey},from:'null'}),403,'Opaque origin is not trusted');
@@ -98,25 +117,40 @@ try{
   await expect(await request('/admin/friend',{cookie:session.slice(0,-1)+(session.endsWith('A')?'B':'A'),
     body:{name:'Test',limit:'2',hours:'72'}}),403,'Modified session signature');
   await admin('invite',{friend:expiredFriend,hours:'24'},201);
+  await admin('invite',{friend:setupFriend,hours:'24'},201);
   const created=await admin('friend',{name:'Max <Test>',limit:'2',hours:'forever'},201);
   assert(created.includes('Max &lt;Test&gt;')&&!created.includes('Max <Test>'),'Escaped friend label');
   assert.match(created,/Einmal einlösbar · ohne Ablaufdatum/);
   const friend=/<section class="panel" id="friend-([^"]+)"><div class="row"><div><h2>Max &lt;Test&gt;<\/h2>/.exec(created)?.[1];
-  const invite=field(created,'invite-url');
-  assert(friend&&invite,'Friend and invitation were created');
-  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(invite),'Cleartext invitation only shown at creation');
+  const code=field(created,'invitation-code');
+  assert.equal(field(created,'configure-url'),origin+configure);
+  assert(friend&&invitationCodePattern.test(code),'Friend and password were created');
+  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(code),'Cleartext password only shown at creation');
   await admin('block',{friend,blocked:'1'},403,'https://other.example');
   const phone='Nuvio test mobile browser',tv='Nuvio test television';
-  const opening=await expect(await request(invite,{client:phone}),200,'Open invitation on phone');
-  assert(opening.includes('Einladung einlösen')&&!opening.includes('name="deviceName"'),'Invitation requires no device label');
-  await expect(await request(invite),200,'Preview must not consume invite');
+  await expect(await request('/e/'+code),404,'Password cannot be used in the legacy link route');
+  await expect(await request(configurationLogin,{body:{code},from:'https://other.example'}),403,'Cross-origin password login');
+  const claims=await Promise.all([request(configurationLogin,{body:{code},client:phone}),request(configurationLogin,{body:{code}})]);
+  assert.deepEqual(claims.map(r=>r.status).sort(),[303,403],'Exactly one concurrent login succeeds');
+  const claim=claims.find(r=>r.status===303);
+  assert.equal(claim.headers.get('location'),configure);
+  const setupCookie=claim.headers.get('set-cookie');
+  assert(setupCookie&&/Path=\/configure; Secure; HttpOnly; SameSite=Strict; Max-Age=1800/.test(setupCookie)&&!setupCookie.includes(code));
+  const setupSession=setupCookie.split(';')[0];
+  await expect(await request(configurationLogin,{body:{code}}),403,'Password is consumed at login');
+  const opening=await expect(await request(configure,{cookie:setupSession,client:phone}),200,'Open configuration on phone');
+  assert.match(opening,/Importlink erstellen/);
+  assert.match(opening,/name="catalog"/);
+  assert.doesNotMatch(opening,/name="deviceName"/);
+  await expect(await request(configure,{cookie:setupSession}),200,'Reload configuration in the same session');
   const selected=['defootball_bl3_sunday','defootball_bl1_friday'];
-  const activation=selected.map(id=>['catalog',id]);
-  await expect(await request(invite,{body:activation,from:'https://other.example'}),403,'Cross-origin activation');
-  await expect(await request(invite,{body:{customize:'1'}}),400,'Invalid configuration must not consume invite');
-  const simultaneous=await Promise.all([request(invite,{body:activation,client:phone}),request(invite,{body:activation,client:phone})]);
-  assert.equal(simultaneous.filter(r=>r.status===200).length,1,'Exactly one concurrent redemption can succeed');
-  assert(simultaneous.every(r=>[200,404,410].includes(r.status)),'Only the winning request receives a key');
+  const activation={body:selected.map(id=>['catalog',id]),cookie:setupSession,client:phone};
+  await expect(await request(configure,{...activation,from:'https://other.example'}),403,'Cross-origin activation');
+  await expect(await request(configure,{...activation,body:{customize:'1'}}),400,'Invalid configuration must not consume session');
+  const simultaneous=await Promise.all([request(configure,activation),request(configure,activation)]);
+  assert.equal(simultaneous.filter(r=>r.status===200).length,1,'Exactly one concurrent activation can succeed');
+  assert(simultaneous.every(r=>[200,403,410].includes(r.status)),'Only the winning request receives a key');
+  assert.match(simultaneous.find(r=>r.ok).headers.get('set-cookie')||'',/Max-Age=0/,'Activation clears the setup cookie');
   const [install]=await Promise.all(simultaneous.sort((a,b)=>a.status-b.status).map(r=>r.text()));
   const tvImport=field(install,'manifest-url');
   assert(tvImport?.includes('/a/')&&tvImport.endsWith('/manifest.json'),'Protected import URL');
@@ -132,23 +166,26 @@ try{
   assert(edit.includes('value="defootball_bl3_sunday" checked'),'Edit form retains selection');
   const changed=await expect(await request(prefix+'/generate',{body:{customize:'1',catalog:'defootball_ucl',browser:'on'}}),200,'Update private settings');
   assert(field(changed,'manifest-url')?.startsWith(origin+prefix+'/u/'),'Updated profile uses the same key');
-  await expect(await request(invite),404,'Consumed invite cannot be opened again');
+  await expect(await request(configure,activation),403,'Completed configuration cannot issue another key');
   await expect(await request(prefix+'/debug/sources.json'),404,'Friend diagnostics remain closed');
   const reservations=await Promise.all([request('/admin/invite',{cookie:session,body:{friend,hours:'forever'}}),
     request('/admin/invite',{cookie:session,body:{friend,hours:'forever'}})]);
   assert.deepEqual(reservations.map(r=>r.status).sort(),[201,409],'Concurrent reservations obey the limit');
   const reservationsHtml=await Promise.all(reservations.map(r=>r.text()));
   const reserved=reservationsHtml[reservations.findIndex(r=>r.status===201)];
-  const pending=field(reserved,'invite-url');
+  const pending=field(reserved,'invitation-code');
   const pendingSlot=slotFor(reserved,friend,'Einladung offen');
   assert(pending&&pendingSlot,'Second invitation without a deadline reserves a slot');
   assert.match(reserved,/Einladung offen<\/h3><p class="hint">ohne Ablaufdatum/);
   await admin('limit',{friend,limit:'1'},409);
   await admin('revoke',{friend,slot:pendingSlot},200);
-  await expect(await request(pending),404,'Revoked invitation without a deadline cannot be opened');
-  const second=field(await admin('invite',{friend,hours:'72'},201),'invite-url');
-  assert(second,'A timed invitation can reserve the freed slot');
-  const laptop=field(await expect(await request(second,{body:{catalog:'defootball_bl1'}}),200,'Activate second key'),'manifest-url');
+  await expect(await request(configurationLogin,{body:{code:pending}}),403,'Revoked password without a deadline cannot be used');
+  const second=field(await admin('invite',{friend,hours:'72'},201),'invitation-code');
+  assert(invitationCodePattern.test(second),'A timed invitation can reserve the freed slot');
+  const secondClaim=await request(configurationLogin,{body:{code:second}});
+  await expect(secondClaim,303,'Claim timed password');
+  const laptop=field(await expect(await request(configure,{cookie:secondClaim.headers.get('set-cookie').split(';')[0],
+    body:{catalog:'defootball_bl1'}}),200,'Activate second key'),'manifest-url');
   assert(laptop&&laptop!==tvImport,'Each device receives a distinct key');
   await admin('limit',{friend,limit:'1'},409);
   const overview=await expect(await request('/admin',{cookie:session}),200,'List devices');
@@ -165,7 +202,7 @@ try{
   await expect(await request(laptop),200,'Laptop works after unpause');
   await expect(await request(tvImport),403,'Previously revoked TV stays revoked');
   await admin('logout',{},303);
-  console.log('Private workerd/D1 verified: single-use invites, concurrent slot limits, per-device revocation, protected imports and admin sessions.');
+  console.log('Private workerd/D1 verified: one-time passwords, setup expiry, legacy invites, concurrent slot limits, revocation and protected imports.');
 }finally{
   if(child&&child.exitCode===null){
     const exit=once(child,'exit');
