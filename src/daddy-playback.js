@@ -3,11 +3,13 @@
  */
 import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyRequestContext,withDaddyFallback,withDaddyAbort} from './daddy-domains.js';
 import {readBounded,decodeDaddyMedia,isMp4,mediaRange} from './daddy-media.js';
-import {WIDE_PLAYER,widePlayerPage} from './daddy-wide.js';
+import {WIDE_PLAYER,TOSSEQUIP,tossequipMediaUrl,widePlayerPage} from './daddy-wide.js';
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const VARIANTS=new Set(['stream','cast','watch','plus','casting','player','hub']);
 const EDGE='https://edge.wedd48c.top';
 const WIDE_CDN='https://cdn.wideiptv.top';
+const ADAPTER_REFERERS={dembed:'https://dembed.st/',assetrage:'https://assetrage.net/',
+  tossequip:TOSSEQUIP+'/',wideiptv:WIDE_PLAYER+'/'};
 const SEGMENT_HOSTS=new Set(['p16-common-sign.tiktokcdn-us.com','p19-common-sign.tiktokcdn-us.com']);
 const stores=new WeakMap(),encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const error=(code,status=502)=>Object.assign(new Error(code),{status});
@@ -23,12 +25,13 @@ export function adapterPlayerUrl(raw,channelId,base){
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)return null;
     if(u.hostname==='dembed.st'&&u.pathname==='/premiumtv/daddy.php'&&u.searchParams.get('id')===String(channelId))return u.href;
     if(u.hostname==='assetrage.net'&&/^\/(?:embed|player|e)\//.test(u.pathname))return u.href;
+    if(u.origin===TOSSEQUIP&&/^\/e\/[a-z0-9]{1,40}$/.test(u.pathname)&&!u.search)return u.href;
     if(u.pathname==='/daddy.php'&&widePlayerPage(u))return u.href;
   }catch{}return null;
 }
 /** Data decoding only, based on the reference player's four-part configuration. */
 export function decodeDaddyConfig(raw){
-  if(typeof raw!=='string'||raw.length>32768||!/^[A-Za-z0-9+/=]+$/.test(raw))return null;
+  if(typeof raw!=='string'||raw.length>262144||!/^[A-Za-z0-9+/=]+$/.test(raw))return null;
   try{
     const first=atob(raw),size=Math.ceil(first.length/4),parts=[];
     if(size<5)return null;
@@ -53,6 +56,7 @@ function mediaUrl(raw,profile,channelId,kind='media',base){
     if(profile==='assetrage'&&/^[a-z0-9-]+\.7odxv0l067ka\.net$/.test(u.hostname)&&
       (!u.port||u.port==='8443')&&u.pathname.startsWith('/hls/')&&
       (kind==='playlist'?u.pathname.endsWith('.m3u8'):/\.(?:ts|m4s|mp4)$/.test(u.pathname)))return u.href;
+    if(profile==='tossequip'&&tossequipMediaUrl(u)&&((kind==='playlist')===u.pathname.endsWith('.m3u8')))return u.href;
     if(profile==='wideiptv'&&u.origin===WIDE_CDN){
       u.pathname=u.pathname.replace(/\/{2,}/g,'/');
       if(/^\/[A-Za-z0-9_-]+\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:m3u8|ts|m4s|mp4)$/.test(u.pathname)&&
@@ -64,7 +68,7 @@ function mediaUrl(raw,profile,channelId,kind='media',base){
 export function daddyPlayerConfig(html,pageUrl,channelId){
   if(!validId(channelId)||!adapterPlayerUrl(pageUrl,channelId))return null;
   if(new URL(pageUrl).origin===WIDE_PLAYER)return null;
-  const profile=new URL(pageUrl).hostname==='dembed.st'?'dembed':'assetrage';
+  const profile={ 'dembed.st':'dembed','assetrage.net':'assetrage','tossequip.net':'tossequip' }[new URL(pageUrl).hostname];
   let url;
   if(profile==='dembed'){
     url=/\bconst\s+SRC\s*=\s*["']([^"']+)["']/.exec(html)?.[1];
@@ -76,9 +80,9 @@ export function daddyPlayerConfig(html,pageUrl,channelId){
     url=data?.stream_url_nop2p||data?.stream_url;
   }
   url=mediaUrl(url,profile,channelId,'playlist');if(!url)return null;
-  return {profile,url,channelId:String(channelId),referer:profile==='dembed'?'https://dembed.st/':'https://assetrage.net/'};
+  return {profile,url,channelId:String(channelId),referer:ADAPTER_REFERERS[profile]};
 }
-async function bytes(url,headers,fetcher,context,limit=262144){
+async function bytes(url,headers,fetcher,context,limit=262144,prefix=false){
   for(let attempt=0;;attempt++){
     const controller=new AbortController(),abort=()=>controller.abort(context.signal.reason);
     if(context.signal.aborted)abort();else context.signal.addEventListener('abort',abort,{once:true});
@@ -89,8 +93,8 @@ async function bytes(url,headers,fetcher,context,limit=262144){
         const response=await fetcher(url,{redirect:'manual',signal:controller.signal,headers:{...headers,'Cache-Control':'no-store'}});
         if(!response.ok){await response.body?.cancel().catch(()=>{});throw error(
           response.status===401||response.status===403?'access_denied':'upstream_http_error',response.status>=400&&response.status<600?response.status:502);}
-        if(Number(response.headers.get('content-length'))>limit){await response.body?.cancel().catch(()=>{});throw error('response_too_large');}
-        return readBounded(response.body,limit);
+        if(!prefix&&Number(response.headers.get('content-length'))>limit){await response.body?.cancel().catch(()=>{});throw error('response_too_large');}
+        return readBounded(response.body,limit,prefix);
       },controller.signal);
     }catch(e){
       if(attempt||context.signal.aborted||!(e.name==='TypeError'||e.name==='TimeoutError'||e.status>=500))throw e;
@@ -150,7 +154,7 @@ async function playlist(config,url,session,fetcher,context,retry=true){
   if(/^#EXT-X-(?:SESSION-KEY|KEY):.*\bMETHOD=(?!NONE\b)/m.test(text))throw error('encrypted_playlist');
   return text;
 }
-async function checkWideMedia(config,session,fetcher,context){
+async function checkAdapterMedia(config,session,fetcher,context){
   let address=config.url;
   for(let depth=0;depth<3;depth++){
     const text=await playlist(config,address,session,fetcher,context);
@@ -159,7 +163,7 @@ async function checkWideMedia(config,session,fetcher,context){
     const target=mediaUrl(raw,config.profile,config.channelId,master?'playlist':'media',address);
     if(!target)throw error('unsupported_media_address');
     if(master){address=target;continue;}
-    const sample=await bytes(target,{...headers(config),Range:'bytes=0-4095'},fetcher,context,4096);
+    const sample=await bytes(target,{...headers(config),Range:'bytes=0-4095'},fetcher,context,4096,true);
     if((sample[0]===0x47&&sample[188]===0x47)||isMp4(sample))return;
     throw error('unsupported_segment_container');
   }
@@ -195,21 +199,19 @@ async function channelConfig(id,variant,fetcher,context,origin=DADDY_PRIMARY){
 }
 export async function resolveDaddyAdapterPage(id,html,pageUrl,fetcher,context,{playbackOrigin,referer}={}){
   const session=crypto.randomUUID(),variant=variantOf(referer,id);
-  const wide=new URL(pageUrl).origin===WIDE_PLAYER;
+  const verify=[WIDE_PLAYER,TOSSEQUIP].includes(new URL(pageUrl).origin);
   let config;
   try{
     config=await playerConfig(id,html,pageUrl,fetcher,context);
     if(!config)return null;
     if(!playbackOrigin)return {status:'playback_origin_required',stream:null};
-    if(wide)await checkWideMedia(config,session,fetcher,context);
+    if(verify)await checkAdapterMedia(config,session,fetcher,context);
   }catch(e){
-    if(!wide||context.signal.aborted||e.message==='request_limit')throw e;
+    if(!verify||context.signal.aborted||e.message==='request_limit')throw e;
     return null;
   }
-  // The stable HLS endpoint performs media I/O when selected. Listing a known
-  // adapter must not lose its option to a transient preflight or shared budget.
   put(store(fetcher).configs,id+':'+variant,{config,until:Date.now()+30000},32);
-  return {status:'resolved',verification:wide?'entry_manifest_and_first_segment':'player_configuration',stream:{
+  return {status:'resolved',adapter:config.profile,verification:verify?'entry_manifest_and_first_segment':'player_configuration',stream:{
     name:'DaddyLive HLS · Kanal '+id,
     url:new URL('daddy/live/'+id+'.m3u8?sid='+session+'&variant='+variant,playbackOrigin.replace(/\/$/,'')+'/').href,
     description:'HLS für den Nuvio-Player; Playlist-Erneuerung und Mediencontainer werden serverseitig verarbeitet.',
@@ -261,9 +263,9 @@ export async function handleDaddyPlayback(request,env={},fetcher=fetch,route={})
     const descriptor=decode(resource[3]);
     if(!Array.isArray(descriptor)||descriptor.length!==4)throw error('invalid_resource',400);
     const [target,profile,session,expiry]=descriptor;
-    if(!['dembed','assetrage','wideiptv'].includes(profile)||!validSession(session)||!Number.isSafeInteger(expiry)||expiry>Date.now()+600000)throw error('invalid_resource',400);
+    if(!Object.hasOwn(ADAPTER_REFERERS,profile)||!validSession(session)||!Number.isSafeInteger(expiry)||expiry>Date.now()+600000)throw error('invalid_resource',400);
     if(expiry<Date.now())throw error('expired_resource',410);
-    const referer={dembed:'https://dembed.st/',assetrage:'https://assetrage.net/',wideiptv:WIDE_PLAYER+'/'}[profile];
+    const referer=ADAPTER_REFERERS[profile];
     const config={channelId:resource[1],profile,referer};
     if(!mediaUrl(target,profile,resource[1],resource[2]))throw error('unsupported_media_address',400);
     if(resource[2]==='playlist'){

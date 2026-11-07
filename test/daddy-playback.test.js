@@ -4,7 +4,7 @@ import {gzipSync,deflateSync} from 'node:zlib';
 import {decodeDaddyMedia,mediaRange} from '../src/daddy-media.js';
 import {decodeDaddyConfig,daddyPlayerConfig,handleDaddyPlayback,rewriteDaddyPlaylist} from '../src/daddy-playback.js';
 import {automaticDaddyEventStreams,automaticDaddyStreams} from '../src/daddy-native.js';
-import {withWidePlayerRelay} from '../src/daddy-wide.js';
+import {withDaddyRelay} from '../src/daddy-wide.js';
 import {handle} from '../src/worker.js';
 import {accessHash,newAccessToken} from '../src/private-store.js';
 
@@ -100,13 +100,18 @@ test('the advertised native option goes through the actual Worker router and ret
   assert.equal(media.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await media.arrayBuffer()),ts);
 });
 
-test('a later conference channel relays player HTML and plays through a cold Worker',async()=>{
+test('a later conference channel exposes both verified WideIPTV and Tossequip players',async()=>{
   const site='https://thedaddy.li',wide='https://wideiptv.top',cdn='https://cdn.wideiptv.top';
   const relay='https://relay.example.org',token='r'.repeat(43);
   const env={DADDY_NATIVE_RESOLVE:'true',DADDY_WIDE_RELAY:JSON.stringify({origin:relay,token})};
   const signedMaster=cdn+'/Conference/index.m3u8?token=fixture';
   const signedRendition=cdn+'/Conference/tracks-v1a1/mono.m3u8?token=fixture';
   const signedSegment=cdn+'/Conference/tracks-v1a1/part.ts?token=fixture';
+  const castCdn='video.7odxv0l067ka.net:8443';
+  const castManifest=`https://${castCdn}/hls/live.m3u8?s=fixture&e=1000`;
+  const castSegment=`https://${castCdn}/hls/part.ts?s=fixture&e=1000`;
+  const castConfig=encodeConfig({stream_url_nop2p:castManifest,padding:'x'.repeat(85000)});
+  const castBytes=Buffer.concat(Array.from({length:25},()=>ts));
   const requests=[];
   const fetcher=async (raw,options)=>{
     const url=String(raw);requests.push(url);
@@ -115,6 +120,8 @@ test('a later conference channel relays player HTML and plays through a cold Wor
     if(url===site+'/stream/stream-903.php')return new Response(
       `<button data-url="${site}/cast/stream-903.php">Cast</button><button data-url="${site}/player/stream-903.php">Player</button>`);
     if(url===site+'/player/stream-903.php')return new Response(`<iframe id="thatframe" src="${wide}/daddy.php?stream=Conference"></iframe>`);
+    if(url===site+'/cast/stream-903.php')return new Response('<iframe id="thatframe" src="https://tossequip.net/e/test903"></iframe>');
+    if(url==='https://tossequip.net/e/test903')return new Response(`var _econfig='${castConfig}';`);
     if(url.startsWith(relay+'/')){
       assert.equal(options.redirect,'manual');
       assert.equal(options.headers.Authorization,'Bearer '+token);
@@ -123,6 +130,8 @@ test('a later conference channel relays player HTML and plays through a cold Wor
         return new Response('<iframe src="/player/Conference"></iframe>');
       }
       if(url===relay+'/player/Conference')return new Response(`streamUrl: "${cdn}//Conference//index.m3u8?token=fixture"`);
+      if(url===castManifest.replace('https://',relay+'/_tossequip/'))return new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\n${castSegment}`);
+      if(url===castSegment.replace('https://',relay+'/_tossequip/'))return new Response(castBytes,{headers:{'content-length':castBytes.length}});
     }
     assert.equal(new Headers(options.headers).get('authorization'),null);
     assert.equal(options.headers.Referer,wide+'/');
@@ -133,13 +142,13 @@ test('a later conference channel relays player HTML and plays through a cold Wor
     assert.fail('Unexpected player or media request');
   };
   const channels=['901','902','903'].map(id=>({id,name:'Sender '+id}));
-  const options=await automaticDaddyEventStreams([{channels}],env,withWidePlayerRelay(fetcher,env.DADDY_WIDE_RELAY),
+  const options=await automaticDaddyEventStreams([{channels}],env,withDaddyRelay(fetcher,env.DADDY_WIDE_RELAY),
     {playbackOrigin:origin,maxChannels:5});
-  assert.equal(options.length,1);
-  assert.equal(options[0].name,'DaddyLive HLS · Sender 903');
-  assert.equal(new URL(options[0].url).searchParams.get('variant'),'player');
+  assert.equal(options.length,2);
+  assert.deepEqual(options.map(s=>s.name),['DaddyLive HLS · Sender 903 · WideIPTV','DaddyLive HLS · Sender 903 · Tossequip']);
+  assert.deepEqual(options.map(s=>new URL(s.url).searchParams.get('variant')),['player','cast']);
   assert(!options[0].url.includes('token='));
-  assert(!requests.includes(site+'/cast/stream-903.php'));
+  assert(requests.indexOf(site+'/player/stream-903.php')<requests.indexOf(site+'/cast/stream-903.php'));
   const cold=(url,options)=>fetcher(url,options);
   const master=await handle(new Request(options[0].url),env,cold);
   assert.equal(master.status,200);
@@ -149,6 +158,12 @@ test('a later conference channel relays player HTML and plays through a cold Wor
   const response=await handle(new Request(media,{headers:{Range:'bytes=0-375'}}),env,cold);
   assert.equal(response.status,206);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()),ts.subarray(0,376));
+  const castRoot=await handle(new Request(options[1].url),env,cold);
+  assert.equal(castRoot.status,200);
+  const castMedia=(await castRoot.text()).split('\n').find(line=>line.startsWith(origin));
+  const castResponse=await handle(new Request(castMedia,{headers:{Range:'bytes=0-375'}}),env,cold);
+  assert.equal(castResponse.status,206);
+  assert.deepEqual(Buffer.from(await castResponse.arrayBuffer()),ts.subarray(0,376));
 });
 
 test('a private HLS option carries its device key through the playlist and segments, then stops after revocation',async()=>{
@@ -257,6 +272,6 @@ test('decodes the attached provider’s econfig format and preserves signed CDN 
   const encoded=encodeConfig(value);assert.deepEqual(decodeDaddyConfig(encoded),value);
   const config=daddyPlayerConfig(`var _econfig='${encoded}';`,'https://assetrage.net/e/426','426');
   assert.equal(config.url,value.stream_url);assert.equal(config.referer,'https://assetrage.net/');
-  assert.equal(decodeDaddyConfig('invalid'),null);assert.equal(decodeDaddyConfig('A'.repeat(32769)),null);
+  assert.equal(decodeDaddyConfig('invalid'),null);assert.equal(decodeDaddyConfig('A'.repeat(262145)),null);
   assert.equal(daddyPlayerConfig(html,player,'11'),null);
 });

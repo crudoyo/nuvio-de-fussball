@@ -8,12 +8,15 @@ export function isTransportStream(b){
     (b.length<564||b[376]===0x47);
 }
 export function isMp4(b){return b.length>=8&&['ftyp','styp','moof'].includes(word(b,4,4));}
-export async function readBounded(body,limit=LIMIT){
+export async function readBounded(body,limit=LIMIT,prefix=false){
   if(!body)throw new Error('empty_response');
   const reader=body.getReader(),parts=[];let size=0;
   try{
     for(;;){const {done,value}=await reader.read();if(done)break;
-      size+=value.length;if(size>limit)throw new Error('response_too_large');parts.push(value);}
+      if(!prefix&&size+value.length>limit)throw new Error('response_too_large');
+      const chunk=value.subarray(0,limit-size);
+      size+=chunk.length;parts.push(chunk);
+      if(prefix&&size===limit)break;}
   }finally{await reader.cancel().catch(()=>{});}
   const result=new Uint8Array(size);let offset=0;
   for(const part of parts){result.set(part,offset);offset+=part.length;}return result;

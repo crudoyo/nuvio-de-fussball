@@ -9,6 +9,7 @@ import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyChannelPage,daddyRequestC
 const HOSTS=new Set(['assetrage.net','dembed.st','ksohls.ru',
   'www.ksohls.ru','tossequip.net','api.cdnlivetv.tv','out-3.welovetocare.shop']);
 const SPECIAL=new Set(['dembed.st','ksohls.ru','www.ksohls.ru']);
+const ADAPTER_NAMES={dembed:'dEmbed',assetrage:'AssetRage',tossequip:'Tossequip',wideiptv:'WideIPTV'};
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const fail=(code,status)=>{const error=new Error(code);error.status=status;throw error;};
 const decode=s=>s.replace(/&amp;/g,'&').replace(/&#(?:0*38|x0*26);/gi,'&').replace(/\\\//g,'/');
@@ -125,7 +126,7 @@ async function checkHls(url,headers,fetcher,context){
   }
   fail('playlist_depth_limit');
 }
-export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin,takeRequest,timeout=6000}={}){
+export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin,takeRequest,timeout=6000,maxVariants=1}={}){
   if(signal?.aborted)throw signal.reason;
   const start=daddyPlayerUrl(channelId,origin);
   if(!start)return {status:'invalid_channel',stream:null};
@@ -133,6 +134,11 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
   const queue=[{url:start,referer:new URL(start).origin+'/',entry:true}],seen=new Set();let status='no_public_media';
   let deniedAlternative=false;
   const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
+  const resolved=new Map();
+  const result=()=>{
+    const [first,...alternatives]=resolved.values();
+    return {...first,checks,alternatives};
+  };
   try{
     for(let count=0;queue.length&&count<8;){
       const page=queue.shift();if(seen.has(page.url))continue;seen.add(page.url);
@@ -158,7 +164,12 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       if(SPECIAL.has(new URL(page.url).hostname)){status='provider_transport_required';checks.providerTransportPages++;}
       if(adapterPlayerUrl(page.url,channelId)){
         const adapted=await resolveDaddyAdapterPage(channelId,html,page.url,fetcher,context,{playbackOrigin,referer:page.referer});
-        if(adapted){checks.mediaConfigurations++;return {...adapted,checks};}
+        if(adapted){
+          checks.mediaConfigurations++;
+          if(!adapted.stream)return resolved.size?result():{...adapted,checks};
+          if(!resolved.has(adapted.adapter))resolved.set(adapted.adapter,adapted);
+          if(resolved.size>=maxVariants)return result();
+        }
       }
       const media=literalMedia(html);
       if(media){
@@ -171,7 +182,8 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
             await checkHls(media,headers,fetcher,context);
             const stream=nativeStreamRecord({url:media,headers,name:'DaddyLive · Kanal '+channelId});
             stream.description='Öffentliche HLS-Konfiguration automatisch aufgelöst; Manifest und erstes Segment geprüft. Gerätewiedergabe nicht bestätigt.';
-            return {status:'resolved',stream,checks};
+            if(!resolved.has(stream.url))resolved.set(stream.url,{status:'resolved',stream});
+            if(resolved.size>=maxVariants)return result();
           }catch(error){
             if(!['unsupported_manifest','empty_playlist','unsupported_segment_container','playlist_loop','playlist_depth_limit'].includes(error.message))throw error;
             status=error.message;
@@ -201,9 +213,10 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       // Read its offered buttons too; the legacy stream page may omit them.
       if(page.entry)queue.push({url:new URL('/watch.php?id='+String(channelId).trim(),page.url).href,referer:page.url,optional:true});
     }
-    return {status:deniedAlternative?'access_denied':status,stream:null,checks};
+    return resolved.size?result():{status:deniedAlternative?'access_denied':status,stream:null,checks};
   }catch(error){
     if(signal?.aborted)throw signal.reason;
+    if(resolved.size)return result();
     checks.failure=/too many subrequests/i.test(error.message)?'worker_subrequest_limit':String(error.name||'Error').replace(/[^a-zA-Z]/g,'').slice(0,30);
     const codes=new Set(['empty_response','response_too_large','access_denied','redirect_not_supported',
       'upstream_http_error','session_required','playlist_loop','unsupported_manifest','encrypted_playlist',
@@ -223,12 +236,19 @@ export async function automaticDaddyEventStreams(events,env,fetcher,options={}){
     const timeout=deadline-Date.now();
     if(timeout<=0)break;
     const results=await Promise.all(channels.slice(index,index+2).map(async channel=>{
-      const result=await resolveDaddyChannel(channel.id,fetcher,{...options,timeout});
+      const result=await resolveDaddyChannel(channel.id,fetcher,{...options,timeout,maxVariants:2});
       options.onDiagnostic?.(channel.id,result);
-      if(result.stream&&result.stream.url.includes('/daddy/live/'))result.stream.name='DaddyLive HLS · '+channel.name;
-      return result.stream;
+      if(!result.stream)return [];
+      const variants=[result,...result.alternatives];
+      return variants.map(({stream,adapter})=>{
+        if(adapter){
+          const label=variants.length>1||adapter==='tossequip'?' · '+ADAPTER_NAMES[adapter]:'';
+          stream.name='DaddyLive HLS · '+channel.name+label;
+        }
+        return stream;
+      });
     }));
-    const streams=results.filter(Boolean);
+    const streams=results.flat();
     if(streams.length)return streams;
   }
   return [];
