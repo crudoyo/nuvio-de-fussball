@@ -4,7 +4,7 @@ import {resolveStreams} from '../src/worker.js';
 import {DADDY_SOCCER_SCHEDULE} from '../src/daddylive.js';
 
 test('a cold source lookup leaves room for native Daddy playback within 50 Worker subrequests',async()=>{
-  const previous=globalThis.caches;let calls=0,tokenCalls=0;
+  const previous=globalThis.caches;let calls=0,tokenCalls=0,optionalCalls=0;
   const take=()=>{if(++calls>50)throw new TypeError('Too many subrequests by single Worker invocation');};
   globalThis.caches={default:{async match(){take();},async put(){take();}}};
   const now=new Date(),time=now.toISOString().slice(11,16);
@@ -15,8 +15,18 @@ test('a cold source lookup leaves room for native Daddy playback within 50 Worke
     <div class="schedule__event"><div class="schedule__time">${time}</div><h4 class="schedule__eventTitle">Bayern vs Bremen</h4>
     <div class="schedule__channels"><a href="/watch.php?id=11">Magenta Sport 303</a><a href="/watch.php?id=426">DAZN1 DE</a></div></div></div></section>`;
   const source='https://nuviosports.xyz',edge='https://edge.wedd48c.top';
+  const noisy=Array.from({length:8},(_,index)=>`https://sports-budget-${index}.example/manifest.json`);
   const fetcher=async(raw,options)=>{
     take();const url=String(raw);
+    if(new URL(url).hostname.startsWith('sports-budget-')){
+      optionalCalls++;
+      if(url.endsWith('/manifest.json'))return Response.json({name:'Extra Sports',catalogs:[
+        {type:'tv',id:'football',name:'Soccer',extra:[{name:'search'}]},
+        {type:'tv',id:'live',name:'Live Now'},{type:'tv',id:'upcoming',name:'Upcoming'}
+      ]});
+      if(url.includes('/catalog/'))return Response.json({metas:[{id:'event',type:'tv',name:'Bayern vs Bremen',released:now.toISOString()}]});
+      return Response.json({streams:[{url:'https://media.example.org/extra.m3u8'}]});
+    }
     if(url===source+'/manifest.json')return Response.json({name:'Sports',catalogs:[
       {type:'tv',id:'football',name:'Soccer',extra:[{name:'search'}]},
       ...['american_football','basketball','cricket','motorsport','hockey','rugby','golf','tennis'].map(id=>({type:'tv',id,name:id,extra:[{name:'search'}]})),
@@ -40,5 +50,11 @@ test('a cold source lookup leaves room for native Daddy playback within 50 Worke
     assert(streams.some(s=>s.url==='https://media.example.org/direct.m3u8'));
     assert.equal(tokenCalls,0,'the selected HLS endpoint owns token requests, not the stream listing');
     assert(calls<=40,`leave headroom for fixture requests: used ${calls}/50`);
+    globalThis.caches=undefined;calls=0;
+    const overloaded=await resolveStreams(fixture,noisy,fetcher,{DADDY_NATIVE_RESOLVE:'true'},undefined,{playbackOrigin:'https://addon.example.org'});
+    assert(overloaded.some(s=>s.url?.includes('/daddy/live/426.m3u8')));
+    assert(overloaded.some(s=>s.url?.includes('/daddy/live/11.m3u8')));
+    assert(overloaded.some(s=>s.url==='https://media.example.org/extra.m3u8'),'at least one configured addon can finish discovery');
+    assert(optionalCalls<=15,'optional providers cannot consume the DaddyLive request allowance');
   }finally{globalThis.caches=previous;}
 });

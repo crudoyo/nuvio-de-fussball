@@ -47,7 +47,7 @@ test('providers diagnostic does not display personal URL or token and flags cata
       resources:['stream','catalog'],catalogs:[{type:'sport',id:'soccer',name:'Soccer'}]});
     return new Response('offline',{status:503});
   };
-  const result=await diagnoseSources([personal],fetcher);
+  const result=await diagnoseSources([personal,'https://sports.highfly.to/manifest.json'],fetcher);
   assert(result.some(x=>x.name==='Sports Streams (Hauptserver)'&&x.sportsCatalogs===1));
   assert(result.some(x=>x.name==='PenguPlay'&&x.catalogCount===0));
   assert(result.some(x=>x.name==='Nuvio Live Sports'&&x.reason==='HTTP 503'));
@@ -55,10 +55,12 @@ test('providers diagnostic does not display personal URL or token and flags cata
   const uri='https://test.workers.dev/debug/sources.json';
   const r=await handle(new Request(uri),{},fetcher);
   assert.equal(r.status,200);
-  assert.equal((await r.json()).providers.length,5);
+  const defaults=(await r.json()).providers;
+  assert.equal(defaults.length,2);
+  assert(!defaults.some(provider=>provider.name.startsWith('Sports Streams')));
 });
 
-test('Sports Streams mirrors remain available for matching when main instance blocks the Worker',async()=>{
+test('a configured Sports Streams mirror can still work when another source denies access',async()=>{
   const fixture={
     matchID:828282,
     matchDateTimeUTC:new Date(Date.now()+3600000).toISOString(),
@@ -79,7 +81,7 @@ test('Sports Streams mirrors remain available for matching when main instance bl
     return new Response('unavailable',{status:503});
   };
   const {resolveStreams}=await import('../src/worker.js');
-  const streams=await resolveStreams(fixture,[],fetcher);
+  const streams=await resolveStreams(fixture,['https://sports.highfly.to/manifest.json','https://sportsfree.highfly.to/manifest.json'],fetcher);
   assert.equal(streams.length,1);
   assert(streams[0].url.endsWith('/bayern-dortmund.m3u8'));
   assert(seen.some(x=>x.includes('sportsfree.highfly.to/stream/sport/one.json')));

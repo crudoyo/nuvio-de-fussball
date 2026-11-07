@@ -26,14 +26,11 @@ import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,sele
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
 export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
-export const VERSION = '0.6.0';
+export const VERSION = '0.6.1';
 const API = 'https://api.openligadb.de';
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
 const BUILTIN_MANIFESTS = [
-  'https://sports.highfly.to/manifest.json',
-  'https://sportsfree.highfly.to/manifest.json',
-  'https://sportsfree-us2.highfly.to/manifest.json',
   'https://nuviosports.xyz/manifest.json'
 ];
 function streamSources(personal = []) {
@@ -236,18 +233,41 @@ function isDirect(s, allowExternal){
   if (!s || typeof s !== 'object' || s.infoHash || s.fileIdx!==undefined || s.sources?.length)return false;
   return playbackUrl(s.url)||(allowExternal&&playbackUrl(s.externalUrl));
 }
+function requestBudget(limit){
+  let remaining=limit;
+  return ()=>{if(remaining<=0)throw new Error('request_limit');remaining--;};
+}
 export async function resolveStreams(game, sources, fetcher=fetch, env={},signal,{playbackOrigin,onNativeDiagnostic}={}) {
   const nativeOnly=String(env.NATIVE_ONLY||'').toLowerCase()==='true';
-  // Independent providers are queried concurrently so an unavailable one
-  // does not block the user's other stream options.
-  const addonTask=Promise.allSettled(streamSources(sources).map(async source=>{
+  // Reserve DaddyLive's external requests and leave headroom for fixture lookups.
+  const takeDaddy=requestBudget(27),takeAddon=requestBudget(15);
+  const daddyTask=getDaddySchedule(env,fetcher,{signal,takeRequest:takeDaddy});
+  const nativeTask=daddyTask.then(async daddy=>{
+    if(!daddy.reachable)return [];
+    const configured=nativeMappedStreams(game,daddy.events,matchScore,env);
+    const [automatic,mapped]=await Promise.all([
+      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin,
+        playbackOrigin,onDiagnostic:onNativeDiagnostic,takeRequest:takeDaddy}),
+      String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'
+        ?verifiedNativeStreams(configured,(url,options)=>{takeDaddy();return fetcher(url,options);})
+        :configured
+    ]);
+    return [...mapped,...automatic];
+  });
+  const timeout=AbortSignal.timeout(9000),addonSignal=signal?AbortSignal.any([signal,timeout]):timeout;
+  const fetchAddon=(url,options)=>{
+    if(addonSignal.aborted)throw addonSignal.reason;
+    takeAddon();
+    return fetcher(url,{...options,signal:AbortSignal.any([options.signal,addonSignal])});
+  };
+  async function queryAddon(source){
     const streams=[];
-    const addon=await loadJSON(source,3600,fetcher);
+    const addon=await loadJSON(source,3600,fetchAddon);
     // Use the actual catalogs and optional search extras declared by the source.
     // This includes the Nuvio Live Sports soccer catalog, not its replay hubs.
     const requests=sportsCatalogRequests(addon,game);
     const eventResponses=await Promise.allSettled(requests.map(c=>
-      loadJSON(addonPath(source,c.path),80,fetcher)
+      loadJSON(addonPath(source,c.path),80,fetchAddon)
         .then(json=>(Array.isArray(json.metas)?json.metas:[])
           .map(m=>({...m,_type:m.type||c.type})))
     ));
@@ -261,28 +281,23 @@ export async function resolveStreams(game, sources, fetcher=fetch, env={},signal
       .sort((a,b)=>b.score-a.score).slice(0,4);
     const variants=await Promise.allSettled(matches.map(async({m})=>{
       const result=await loadJSON(addonPath(source,
-        'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),0,fetcher);
+        'stream/'+encodeURIComponent(m._type)+'/'+encodeURIComponent(m.id)+'.json'),0,fetchAddon);
       return (Array.isArray(result.streams)?result.streams:[])
         .map(s=>forwardSportsStream(s,source,addon.name,!nativeOnly))
         .filter(Boolean).slice(0,12);
     }));
     for(const v of variants)if(v.status==='fulfilled')streams.push(...v.value);
     return streams;
-  }));
-  const daddyTask=getDaddySchedule(env,fetcher,{signal});
-  // Resolve in parallel with the other addons so probing does not add its
-  // entire deadline after an already slow provider query.
-  const nativeTask=daddyTask.then(async daddy=>{
-    if(!daddy.reachable)return [];
-    const configured=nativeMappedStreams(game,daddy.events,matchScore,env);
-    const [mapped,automatic]=await Promise.all([
-      String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'?verifiedNativeStreams(configured,fetcher):configured,
-      automaticDaddyStreams(game,daddy.events,matchScore,env,fetcher,{signal,origin:daddy.siteOrigin,playbackOrigin,onDiagnostic:onNativeDiagnostic})
-    ]);
-    return [...mapped,...automatic];
-  });
-  const [all,daddy,native]=await Promise.all([addonTask,daddyTask,nativeTask]);
-  const found=all.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
+  }
+  const addonTask=(async()=>{
+    const candidates=streamSources(sources),streams=[];
+    for(let i=0;i<candidates.length&&!addonSignal.aborted;i+=2){
+      const results=await Promise.allSettled(candidates.slice(i,i+2).map(queryAddon));
+      for(const result of results)if(result.status==='fulfilled')streams.push(...result.value);
+    }
+    return streams;
+  })();
+  const [found,daddy,native]=await Promise.all([addonTask,daddyTask,nativeTask]);
   const players=!nativeOnly && String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true' && daddy.reachable
     ? externalDaddyPlayers(game,daddy.events,matchScore,daddy.siteOrigin)
     : [];
@@ -438,15 +453,18 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/|\/background\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
     if(details?.[2].startsWith(SIMULCAST_PREFIX)){
-      const daddy=await getDaddySchedule(env,fetcher,{signal:request.signal});
+      const takeDaddy=requestBudget(40);
+      const daddy=await getDaddySchedule(env,fetcher,{signal:request.signal,takeRequest:takeDaddy});
       if(!daddy.reachable)return json({error:'Spielplan nicht verfügbar'},503,0);
       const event=bundesligaSimulcasts(daddy.events).find(entry=>SIMULCAST_PREFIX+entry.matchID===details[2]);
       if(!event)return json({error:'Konferenz nicht gefunden'},404,0);
       if(details[1]==='meta')return json({meta:simulcastMeta(event,origin,prefix)});
       const mapped=nativeMappedEventStreams([event],env);
       const [verified,native]=await Promise.all([
-        String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'?verifiedNativeStreams(mapped,fetcher):mapped,
-        automaticDaddyEventStreams([event],env,fetcher,{signal:request.signal,origin:daddy.siteOrigin,playbackOrigin:origin+accessPrefix})
+        String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'
+          ?verifiedNativeStreams(mapped,(url,options)=>{takeDaddy();return fetcher(url,options);})
+          :mapped,
+        automaticDaddyEventStreams([event],env,fetcher,{signal:request.signal,origin:daddy.siteOrigin,playbackOrigin:origin+accessPrefix,takeRequest:takeDaddy})
       ]);
       const browser=String(env.NATIVE_ONLY||'').toLowerCase()!=='true'&&String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
         ?daddyPlayersForEvents([event],daddy.siteOrigin):[];
@@ -475,7 +493,7 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
     }
     if(details){
       const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);
-      const [games,table]=await Promise.all([fixtures(found.league,env,fetcher),
+      const [games,table]=await Promise.all([fixtures(found.league,env,fetcher,details[1]==='meta'),
         details[1]==='meta'?standings(found.league,env,fetcher):Promise.resolve([])]);
       const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
       if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,seasonStatistics(found.league,games,table))});

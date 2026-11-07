@@ -70,6 +70,8 @@ export function forwardSportsStream(s, manifestUrl, addonName, allowExternal=tru
   if (!s || typeof s !== 'object' || Array.isArray(s) ||
       s.infoHash || s.fileIdx !== undefined ||
       (Array.isArray(s.sources) && s.sources.length)) return null;
+  const label=String(s.name||'').trim();
+  if(/^please reinstall the addon[.!]?$/i.test(label)||(!s.url&&/^\W*support us$/i.test(label)))return null;
   const url = httpUrl(s.url,manifestUrl);
   const externalUrl = allowExternal ? httpUrl(s.externalUrl,manifestUrl) : null;
   if (!url && !externalUrl) return null;

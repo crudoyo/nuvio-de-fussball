@@ -120,11 +120,11 @@ async function checkHls(url,headers,fetcher,context){
   }
   fail('playlist_depth_limit');
 }
-export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin}={}){
+export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin,takeRequest}={}){
   if(signal?.aborted)throw signal.reason;
   const start=daddyPlayerUrl(channelId,origin);
   if(!start)return {status:'invalid_channel',stream:null};
-  const context=daddyRequestContext({signal,timeout:6000});context.channelId=String(channelId).trim();
+  const context=daddyRequestContext({signal,timeout:6000,takeRequest});context.channelId=String(channelId).trim();
   const queue=[{url:start,referer:new URL(start).origin+'/',entry:true}],seen=new Set();let status='no_public_media';
   const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
   try{

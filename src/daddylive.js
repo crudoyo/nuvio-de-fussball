@@ -185,7 +185,7 @@ async function downloadSchedule(url, fetcher, context, signal, protectedApi=fals
  * A source returning HTTP 200 but zero compatible football events is reported
  * distinctly from a network error.
  */
-export async function getDaddySchedule(env={},fetcher=fetch,{signal}={}) {
+export async function getDaddySchedule(env={},fetcher=fetch,{signal,takeRequest}={}) {
   if(signal?.aborted)throw signal.reason;
   const key=String(env.DADDY_API_KEY||'').trim();
   // Keep mocked fetchers uncached so tests and diagnostics remain independent.
@@ -196,7 +196,7 @@ export async function getDaddySchedule(env={},fetcher=fetch,{signal}={}) {
   if(old && old.expires>Date.now())return old.result;
   if(old?.pending&&!signal)return old.pending;
   const pending=(async()=>{
-    const attempts=[],context=daddyRequestContext({signal});
+    const attempts=[],context=daddyRequestContext({signal,takeRequest});
     const candidates=[
       ...(key?[{name:'DaddyLive API (Schlüssel)',url:apiUrl(key),protectedApi:true}]:[]),
       {name:'DaddyLive All Soccer Events',url:DADDY_SOCCER_SCHEDULE,format:'html'},

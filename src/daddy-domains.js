@@ -24,7 +24,7 @@ export function daddyChannelPage(raw,channelId,base){
   return !url.search&&new RegExp('^/(?:stream|cast|watch|plus|casting|player|hub)/stream-'+id+'\\.php$')
     .test(url.pathname)?url.href:null;
 }
-export function daddyRequestContext({signal,timeout=7500,maxRequests=20}={}){
+export function daddyRequestContext({signal,timeout=7500,maxRequests=20,takeRequest}={}){
   const controller=new AbortController();
   const abort=()=>controller.abort(signal?.reason||new DOMException('Aborted','AbortError'));
   if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
@@ -33,6 +33,7 @@ export function daddyRequestContext({signal,timeout=7500,maxRequests=20}={}){
     take(){
       if(controller.signal.aborted)throw controller.signal.reason;
       if(this.requests>=maxRequests)throw new Error('request_limit');
+      takeRequest?.();
       this.requests++;
     },
     close(){clearTimeout(timer);signal?.removeEventListener('abort',abort);}

@@ -1,6 +1,6 @@
 # SoccerDE für Nuvio (Cloudflare Workers)
 
-**Version 0.6.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.6.1 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -13,7 +13,7 @@
 - Mobile Konfigurationsseite `/configure`: Kataloge einzeln oder pro Wettbewerb auswählen, suchen und mit Pfeilen sortieren. Browser-Ersatzoptionen lassen sich ausschalten. Bis zu acht **exakte HTTPS-Manifest-URLs** zusätzlicher Sport-Add-ons können ergänzt werden.
 - Persönliche HTTPS-Import-URL mit Kopierknopf und direkte Installation über **In Nuvio installieren** bzw. **In Stremio installieren**. Alle drei Links enthalten dieselbe Auswahl. Der persönliche Konfigurationslink stellt die Einstellungen später wieder her; bisherige Installationslinks bleiben gültig. Details: [Konfiguration und App-Links](docs/configuration.md).
 - Optionaler [Einladungsmodus](docs/private-access.md) für den Freundeskreis: geschützte Verwaltung, einmalige Einladungen und einzeln sperrbare Geräteplätze. Bei eingeschaltetem Modus brauchen auch bestehende Installationen einen neuen, autorisierten Link.
-- Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuviosports.xyz`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. DaddyLive ergänzt einen eigenen Spielplanadapter und für den geprüften aktuellen Player einen HLS-Endpunkt mit öffentlichen Playlist-Tokens und begrenzter PNG-/WebP-Medienverarbeitung. Externe HTML-Player bleiben gekennzeichnete Ersatzoptionen. Keine beliebige Skriptausführung, DRM-Verarbeitung oder P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
+- Der Worker prüft zusätzlich automatisch das öffentliche Manifest von **Nuvio Live Sports** (`nuviosports.xyz`). Eigene Manifest-URLs können über `/configure` ergänzt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. DaddyLive hat dafür ein eigenes Anfragebudget und einen HLS-Endpunkt mit öffentlichen Playlist-Tokens und begrenzter PNG-/WebP-Medienverarbeitung. Externe HTML-Player bleiben gekennzeichnete Ersatzoptionen. Keine beliebige Skriptausführung, DRM-Verarbeitung oder P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
 
 ### Einschränkungen
@@ -85,7 +85,7 @@ Bei jedem Push auf `main` prüft der Workflow [Worker checks](.github/workflows/
 
 - **OpenLigaDB (ODbL 1.0):** deutsche Wettbewerbe inklusive Champions League (`ucl`); Teams liefern häufig `teamIconUrl`.
 - **ESPN Site API:** Europa League und Conference League, jeweils die kommenden ~30 Tage. Öffentliche, nicht offiziell garantierte API mit Mannschaftsnamen und Logo-URLs; bei Fehlern kann ein Katalog vorübergehend leer bleiben.
-- **Sports Streams:** öffentliche Manifest-URL `https://sports.highfly.to/manifest.json` – nur reguläre Add-on-Protokollendpunkte, keine eigenen Provider-Scraper.
+- **Sports Streams:** nur über eine ausdrücklich konfigurierte Manifest-URL. Die früheren Standardquellen liefern derzeit einen Neuinstallationshinweis.
 - **PenguPlay:** Die öffentliche Standardadresse stellt keine persönliche Live-TV-Konfiguration zur Verfügung. Füge die individuell von PenguPlay erstellte HTTPS-Manifest-URL unter `/configure` ein. Die Auswahl von `Live TV` innerhalb von Nuvio wird nicht automatisch an einen unabhängigen Worker übermittelt.
 - **Nuvio Live Sports:** Die vom Entwickler angekündigte öffentliche Instanz `https://nuviosports.xyz/manifest.json` wird probeweise eingebunden. Die alte Adresse `nuvio.moaqeel6679.my.id` lieferte am 06.11.2026 HTTP 530. Eigene personalisierte Manifest-URLs können unter `/configure` ergänzt werden.
 - Streamquellen werden bei Bedarf (wenn ein Spiel geöffnet wird) abgefragt, nicht dauerhaft in diesem Repository gespeichert. Zugangsdaten werden nicht im Repository abgelegt. Direkte Verlinkungen ersetzen keine Nutzungsrechte; bei nicht unterstützten P2P-/geschützten Formaten wird nichts umgangen.
@@ -99,16 +99,15 @@ Bei jedem Push auf `main` prüft der Workflow [Worker checks](.github/workflows/
 
 ## Diagnose und Logo-Fallback (v0.3.2)
 
-- **Achtung: Sports Streams ist umgezogen.** Die frühere Hostadresse `sports.highfly.dev` wurde durch `sports.highfly.to` ersetzt. Bei Bedarf das eigene Sport-Add-on neu installieren.
 - Unter `/debug/sources.json` zeigt der Worker pro automatisch angebundenem Anbieter, ob das Manifest erreichbar ist, wie viele Sportkataloge es anbietet und ob `stream` als Ressource deklariert wird. Die Diagnose zeigt **keine Stream-URLs oder persönlichen Zugangstoken** an.
 - Im persönlichen Installationsdialog führt **Quellen prüfen** zur Diagnose desselben persönlichen Setups. Nicht ungeprüft persönliche Installations-URLs teilen.
 - Die Mannschaftswappen werden zuerst aus OpenLigaDB geladen. Falls der Abruf nicht gelingt, versucht das Add-on für unterstützte Wettbewerbe die ESPN-Teamliste und deren Logos. Kann auch dieser Dienst kein Wappen liefern, erscheint weiterhin ein Kürzel. Die ESPN-Schnittstelle ist nicht offiziell unterstützt und kann aus Cloudflare gelegentlich fehlschlagen.
 - Das Add-on hat weiterhin **keine direkten eingebauten DaddyLive-Scraper**. Streams werden nur dann angezeigt, wenn ein angebundener Anbieter eine passende Veranstaltung und eine nutzbare direkte HTTP(S)-Streamadresse anbietet. Vor Anpfiff sind Ergebnisse oft noch leer.
 - Die Anzeige der Pengu-Kataloge in Nuvio ist unabhängig von der Nutzung des persönlichen PenguPlay-Manifests im Worker. Der Worker kann die Pengu-Einstellungen in Nuvio nicht auslesen.
 
-## Sports Streams mirrors (v0.3.3)
+## Sports Streams
 
-The worker checks the official free instances `sports.highfly.to`, `sportsfree.highfly.to`, and `sportsfree-us2.highfly.to`, each via their standard Stremio manifest endpoint. The alternate domains were publicly announced by the Sports Streams developer. If the primary host blocks the Worker (HTTP 403), other instances can still return match and stream data. A mirror is not guaranteed to work: inspect `/debug/sources.json` for actual availability.
+Die drei früheren Standard-Manifest-URLs von Sports Streams lieferten am 07.11.2026 bei Stuttgart–Bremen einen Neuinstallationshinweis anstelle eines Streams. SoccerDE fragt sie deshalb nur noch ab, wenn sie ausdrücklich konfiguriert sind. Der Hinweis erscheint nicht in der Streamliste.
 
 The public Nuvio Live Sports host may return HTTP 530; this cannot be fixed in the Worker. Users may specify their own working manifest URLs on `/configure` and install the newly generated personal football addon link. Personal manifest addresses may contain access tokens; do not post them publicly.
 

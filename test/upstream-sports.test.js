@@ -62,6 +62,8 @@ test('resolves only relative browser fallbacks against their original addon',()=
   assert.equal(forwardSportsStream({infoHash:'x',url:'https://example.org/a'},
     manifest,'Sport'),null);
   assert.equal(forwardSportsStream({url:'magnet:?xt=abc'},manifest,'Sport'),null);
+  assert.equal(forwardSportsStream({name:'Please reinstall the addon',url:'https://sports.highfly.to/configure'},manifest,'Sports Streams'),null);
+  assert.equal(forwardSportsStream({name:'🧿 Support Us',externalUrl:'/support'},manifest,'Sport'),null);
 });
 
 test('finds an event using the existing addon search and forwards its native relay unchanged',async()=>{
@@ -138,7 +140,7 @@ test('the default source uses the announced Nuvio Live Sports domain and keeps i
   assert(report.some(p=>p.name==='Nuvio Live Sports'&&p.reachable&&p.hasStreamResource));
 });
 
-test('failed addon responses release their bodies before native playback requests continue',async()=>{
+test('failed addon responses release their bodies',async()=>{
   const rejected=[],cancelled=[];
   const mock=async url=>{
     if(String(url).endsWith('/manifest.json')){
@@ -150,7 +152,7 @@ test('failed addon responses release their bodies before native playback request
     }
     return new Response('',{status:404});
   };
-  await diagnoseSources([],mock,{});
-  assert(rejected.length>=3); // Other manifests may already be cached.
+  await diagnoseSources(['https://denied.example/manifest.json'],mock,{});
+  assert(rejected.includes('https://denied.example/manifest.json'));
   assert.deepEqual(cancelled.sort(),rejected.sort());
 });
