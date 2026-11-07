@@ -31,8 +31,16 @@ jobs:
         run: npx wrangler deploy --dry-run --outdir dist
       - name: Verify actual Worker runtime and entrypoint
         run: node scripts/check-worker-runtime.mjs
+      - name: Verify private access against local D1
+        run: npm run test:private
       - name: Verify deployed version and report native availability
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           WORKER_SMOKE_URL: https://nuvio-de-fussball.crudolol.workers.dev
-        run: node scripts/smoke.mjs
+          WORKER_SMOKE_MODE: ${{ vars.WORKER_SMOKE_MODE || 'public' }}
+        run: |
+          if [[ "$WORKER_SMOKE_MODE" == "private" ]]; then
+            node scripts/smoke-private.mjs
+          else
+            node scripts/smoke.mjs
+          fi

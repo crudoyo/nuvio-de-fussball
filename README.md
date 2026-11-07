@@ -1,6 +1,6 @@
 # Nuvio · Deutscher Fußball (Cloudflare Workers)
 
-**Version 0.5.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.6.0 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -11,6 +11,7 @@
 - Spielbeschreibungen zeigen verfügbare Statistiken: in den drei deutschen Profiligen Tabellenplatz, Punkte und Tore sowie die Form aus bis zu fünf beendeten Spielen desselben Wettbewerbs. Das gilt auch für die Beschreibung beim Markieren einer Katalogkachel. Beendete Partien nennen End- und gegebenenfalls Halbzeitstand.
 - Mobile Konfigurationsseite `/configure`: Kataloge einzeln oder pro Wettbewerb auswählen, suchen und mit Pfeilen sortieren. Browser-Ersatzoptionen lassen sich ausschalten. Bis zu acht **exakte HTTPS-Manifest-URLs** zusätzlicher Sport-Add-ons können ergänzt werden.
 - Persönliche HTTPS-Import-URL mit Kopierknopf und direkte Installation über **In Nuvio installieren** bzw. **In Stremio installieren**. Alle drei Links enthalten dieselbe Auswahl. Der persönliche Konfigurationslink stellt die Einstellungen später wieder her; bisherige Installationslinks bleiben gültig. Details: [Konfiguration und App-Links](docs/configuration.md).
+- Optionaler [Einladungsmodus](docs/private-access.md) für den Freundeskreis: geschützte Verwaltung, einmalige Einladungen und einzeln sperrbare Geräteplätze. Bei eingeschaltetem Modus brauchen auch bestehende Installationen einen neuen, autorisierten Link.
 - Der Worker prüft zusätzlich automatisch die bekannten öffentlichen Manifest-Schnittstellen von **Sports Streams** (`sports.highfly.to`) und **Nuvio Live Sports** (`nuviosports.xyz`); die eigene PenguPlay-Live-TV-Konfiguration muss separat über `/configure` hinzugefügt werden. Zur Wiedergabe werden passende Spiele in `sport`- und `tv`-Katalogen ermittelt und direkte HTTP(S)-Streams der Anbieter übernommen, **nur bei eindeutigem Mannschaftsabgleich**. DaddyLive ergänzt einen eigenen Spielplanadapter und für den geprüften aktuellen Player einen HLS-Endpunkt mit öffentlichen Playlist-Tokens und begrenzter PNG-/WebP-Medienverarbeitung. Externe HTML-Player bleiben gekennzeichnete Ersatzoptionen. Keine beliebige Skriptausführung, DRM-Verarbeitung oder P2P-/Torrent-Auflösung. Identische Stream-URLs werden zusammengefasst.
 - Unabhängig von Kaptain und AIOMetadata; keine Datenbank erforderlich.
 

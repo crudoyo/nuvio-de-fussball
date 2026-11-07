@@ -5,6 +5,7 @@ import {decodeDaddyMedia,mediaRange} from '../src/daddy-media.js';
 import {decodeDaddyConfig,daddyPlayerConfig,handleDaddyPlayback,rewriteDaddyPlaylist} from '../src/daddy-playback.js';
 import {automaticDaddyStreams} from '../src/daddy-native.js';
 import {handle} from '../src/worker.js';
+import {accessHash,newAccessToken} from '../src/private-store.js';
 
 const origin='https://addon.example.org',edge='https://edge.wedd48c.top',sid='playback-test-session-one';
 const player='https://dembed.st/premiumtv/daddy.php?id=426';
@@ -96,6 +97,32 @@ test('the advertised native option goes through the actual Worker router and ret
   const media=await handle(new Request(uri),{},fetcher);
   assert.equal(media.status,200);assert.equal(media.headers.get('content-type'),'video/mp2t');
   assert.equal(media.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await media.arrayBuffer()),ts);
+});
+
+test('a private HLS option carries its device key through the playlist and segments, then stops after revocation',async()=>{
+  const {fetcher,seen}=network(),key=newAccessToken(),hash=await accessHash(key),prefix='/a/'+key;
+  let revoked_at=null;
+  const env={PRIVATE_ACCESS:'true',PRIVATE_ADMIN_KEY:newAccessToken(),
+    PRIVATE_DB:{prepare(){return {bind(value){return {first:async()=>value===hash?{blocked:0,revoked_at}:null};}};}}};
+  const fixture={matchDateTimeUTC:'2026-11-06T17:30:00Z',team1:{teamName:'Bayern'},team2:{teamName:'Bremen'}};
+  const events=[{name:'Bayern vs Bremen',startTime:fixture.matchDateTimeUTC,channels:[{id:'426',name:'DAZN1 DE'}]}];
+  const [stream]=await automaticDaddyStreams(fixture,events,()=>17,{DADDY_NATIVE_RESOLVE:'true'},fetcher,{playbackOrigin:origin+prefix});
+  assert.equal(new URL(stream.url).pathname,prefix+'/daddy/live/426.m3u8');
+  const get=url=>handle(new Request(url),env,fetcher);
+  const master=await get(stream.url);assert.equal(master.status,200);
+  const uri=(await master.text()).split('\n').find(line=>line.startsWith('https:'));
+  assert(uri.startsWith(origin+prefix+'/daddy/resource/426/media/'));
+  const media=await get(uri);
+  assert.equal(media.status,200);
+  assert.equal(media.headers.get('cache-control'),'private, no-store');
+  assert.deepEqual(Buffer.from(await media.arrayBuffer()),ts);
+  assert(!seen.some(x=>x.url.includes(key)||JSON.stringify(x.options.headers).includes(key)),'credentials stay on the Worker origin');
+  const before=seen.length;
+  assert.equal((await get(uri.replace(prefix,''))).status,404);
+  revoked_at=Date.now();
+  assert.equal((await get(stream.url)).status,403);
+  assert.equal((await get(uri)).status,403);
+  assert.equal(seen.length,before,'revocation blocks upstream traffic before playlist or media fetch');
 });
 
 test('Range and suffix requests use decoded bytes and unsatisfiable ranges report their real length',async()=>{

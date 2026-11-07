@@ -162,7 +162,7 @@ export async function resolveDaddyAdapterPage(id,html,pageUrl,fetcher,context,{p
   put(store(fetcher).configs,id+':'+variant,{config,until:Date.now()+30000},32);
   return {status:'resolved',verification:'player_configuration',stream:{
     name:'DaddyLive HLS · Kanal '+id,
-    url:new URL('/daddy/live/'+id+'.m3u8?sid='+session+'&variant='+variant,playbackOrigin).href,
+    url:new URL('daddy/live/'+id+'.m3u8?sid='+session+'&variant='+variant,playbackOrigin.replace(/\/$/,'')+'/').href,
     description:'HLS für den Nuvio-Player; Playlist-Erneuerung und Mediencontainer werden serverseitig verarbeitet.',
     behaviorHints:{notWebReady:false}
   }};
@@ -195,9 +195,10 @@ export function rewriteDaddyPlaylist(text,base,config,session,origin){
 function response(body,status=200,extra={}){return new Response(body,{status,headers:{
   'access-control-allow-origin':'*','access-control-allow-headers':'Range','access-control-expose-headers':'Content-Range,Accept-Ranges',
   'cache-control':'no-store','x-content-type-options':'nosniff',...extra}});}
-export async function handleDaddyPlayback(request,env={},fetcher=fetch){
-  const url=new URL(request.url),root=/^\/daddy\/live\/([1-9]\d{0,5})\.m3u8$/.exec(url.pathname);
-  const resource=/^\/daddy\/resource\/([1-9]\d{0,5})\/(playlist|media)\/([A-Za-z0-9_-]{1,8192})\.(?:m3u8|ts)$/.exec(url.pathname);
+export async function handleDaddyPlayback(request,env={},fetcher=fetch,route={}){
+  const url=new URL(request.url),pathname=route.pathname||url.pathname,playbackBase=route.playbackBase||url.origin;
+  const root=/^\/daddy\/live\/([1-9]\d{0,5})\.m3u8$/.exec(pathname);
+  const resource=/^\/daddy\/resource\/([1-9]\d{0,5})\/(playlist|media)\/([A-Za-z0-9_-]{1,8192})\.(?:m3u8|ts)$/.exec(pathname);
   if(!root&&!resource)return response('Not found',404);
   const context=daddyRequestContext({signal:request.signal,timeout:20000,maxRequests:20});
   try{
@@ -206,7 +207,7 @@ export async function handleDaddyPlayback(request,env={},fetcher=fetch){
       if(!validSession(session)||!VARIANTS.has(variant))throw error('invalid_playback_request',400);
       const config=await channelConfig(root[1],variant,fetcher,context);
       const text=await playlist(config,config.url,session,fetcher,context);
-      return response(rewriteDaddyPlaylist(text,config.url,config,session,url.origin),200,{'content-type':'application/vnd.apple.mpegurl'});
+      return response(rewriteDaddyPlaylist(text,config.url,config,session,playbackBase),200,{'content-type':'application/vnd.apple.mpegurl'});
     }
     const descriptor=decode(resource[3]);
     if(!Array.isArray(descriptor)||descriptor.length!==4)throw error('invalid_resource',400);
@@ -217,7 +218,7 @@ export async function handleDaddyPlayback(request,env={},fetcher=fetch){
     if(!mediaUrl(target,profile,resource[1],resource[2]))throw error('unsupported_media_address',400);
     if(resource[2]==='playlist'){
       const text=await playlist(config,target,session,fetcher,context);
-      return response(rewriteDaddyPlaylist(text,target,config,session,url.origin),200,{'content-type':'application/vnd.apple.mpegurl'});
+      return response(rewriteDaddyPlaylist(text,target,config,session,playbackBase),200,{'content-type':'application/vnd.apple.mpegurl'});
     }
     const media=await decodeDaddyMedia(await bytes(target,headers(config),fetcher,context,16*1024*1024));
     const info={'content-type':isMp4(media)?'video/mp4':'video/mp2t','accept-ranges':'bytes'};

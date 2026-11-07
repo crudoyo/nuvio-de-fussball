@@ -1,11 +1,12 @@
 {
   "name": "nuvio-de-fussball",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "wrangler deploy --dry-run --outdir dist",
     "test": "node --test",
+    "test:private": "node scripts/check-private-worker.mjs",
     "check:crests": "node scripts/check-3liga-logos.mjs",
     "check:ucl-crests": "node scripts/check-ucl-logos.mjs",
     "dev": "wrangler dev",

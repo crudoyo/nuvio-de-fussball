@@ -1,0 +1,24 @@
+{
+  // Local test configuration. For production, use a real database ID and the intended Worker name.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nuvio-de-fussball-private-local",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "PRIVATE_ACCESS": "true",
+    "SEASON": "2026",
+    "DADDY_WEB_PLAYERS": "true",
+    "NATIVE_ONLY": "false",
+    "NATIVE_VERIFY_MANIFESTS": "true",
+    "DADDY_NATIVE_RESOLVE": "true"
+  },
+  "d1_databases": [{
+    "binding": "PRIVATE_DB",
+    "database_name": "nuvio-private-local",
+    "database_id": "00000000-0000-4000-8000-000000000001",
+    "migrations_dir": "migrations/private"
+  }],
+  "rules": [{ "type": "Data", "globs": ["**/*.woff2"], "fallthrough": true }]
+}

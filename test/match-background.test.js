@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Resvg,initWasm} from '@resvg/resvg-wasm';
 import {makeMatchBackground} from '../src/graphics.js';
-import {handle,encodeConfig} from '../src/worker.js';
+import {handle,encodeConfig,VERSION} from '../src/worker.js';
 
 const wasm=await readFile(new URL('../node_modules/@resvg/resvg-wasm/index_bg.wasm',import.meta.url));
 await initWasm(wasm);
@@ -54,7 +54,7 @@ test('catalog and personal detail metadata use a separate, versioned background 
     const body=await reply.json(),meta=body.meta||body.metas[0];
     assert.equal(reply.status,200);
     assert.notEqual(meta.poster,meta.background);
-    assert.equal(meta.background,`https://addon.test${path.startsWith(prefix)?prefix:''}/background/bl1/998877.png?v=0.5.0`);
+    assert.equal(meta.background,`https://addon.test${path.startsWith(prefix)?prefix:''}/background/bl1/998877.png?v=${VERSION}`);
     let observed;
     const image=await handle(new Request(meta.background),{SEASON:'2026',
       __testPngRenderer:async svg=>{observed=render(svg);return observed.asPng();}},fetcher);

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {curatedCrest} from '../src/crests.js';
 import {makeMatchPoster} from '../src/graphics.js';
-import {handle} from '../src/worker.js';
+import {handle,VERSION} from '../src/worker.js';
 
 const png=Uint8Array.from(Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==','base64'));
@@ -76,5 +76,6 @@ test('match metadata publishes team crest URLs to native Nuvio clients',async()=
   assert.equal(meta.team2.logo,'https://www.footylogos.com/dls/logo/rgba-v1/rot-weiss-essen.png');
   assert.equal(meta.team1.name,match.team1.teamName);
   assert.equal(meta.team2.name,match.team2.teamName);
-  assert.match(meta.poster,/\.png\?v=0\.5\.0$/);
+  assert.match(new URL(meta.poster).pathname,/\.png$/);
+  assert.equal(new URL(meta.poster).searchParams.get('v'),VERSION);
 });

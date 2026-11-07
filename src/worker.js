@@ -23,8 +23,9 @@ import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
 import {MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
 import {configurePage,installationPage} from './configure-page.js';
+import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
 export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 const API = 'https://api.openligadb.de';
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
@@ -306,14 +307,17 @@ export async function diagnoseSources(personal=[], fetcher=fetch, env={},options
     playerLinksEnabled:String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
   }];
 }
-export async function handle(request,env={},fetcher=fetch) {
+async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
   const url=new URL(request.url), origin=url.origin;
-  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type'}});
+  const privateMode=Boolean(accessPrefix||invite);
+  if(accessPrefix)url.pathname=url.pathname.slice(accessPrefix.length);
+  if(invite)url.pathname=request.method==='GET'?'/configure':'/generate';
+  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type,Range'}});
   if(request.method!=='GET'&&!(request.method==='POST'&&url.pathname==='/generate'))return json({error:'Methode nicht erlaubt'},405);
   const browserAllowed=String(env.NATIVE_ONLY||'').toLowerCase()!=='true';
   try {
-    if(url.pathname.startsWith('/daddy/'))return handleDaddyPlayback(request,env,fetcher);
-    if(url.pathname==='/'||url.pathname==='/configure')return html(configurePage({version:VERSION,catalogs:configurationCatalogs(await leagues(env,fetcher)),browserAllowed}));
+    if(url.pathname.startsWith('/daddy/'))return handleDaddyPlayback(request,env,fetcher,{pathname:url.pathname,playbackBase:origin+accessPrefix});
+    if(url.pathname==='/'||url.pathname==='/configure')return html(configurePage({version:VERSION,catalogs:configurationCatalogs(await leagues(env,fetcher)),browserAllowed,accessPrefix,invite}));
     if(url.pathname==='/health')return json({ok:true,version:VERSION,season:Number(env.SEASON)||seasonOf(),
       nativePlayback:{automaticPublicHls:String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()==='true',
         verifyConfiguredManifests:String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true',
@@ -322,24 +326,33 @@ export async function handle(request,env={},fetcher=fetch) {
         providerTokenRenewal:true,packedSegments:true}},200,0);
     if(url.pathname==='/generate'){
       const catalogs=configurationCatalogs(await leagues(env,fetcher));let form=new URLSearchParams();
+      let settings,configPrefix,name;
       try{
         form=request.method==='POST'?await readSettingsForm(request):url.searchParams;
-        const customized=form.get('customize')==='1';
-        const settings=customized?settingsFromForm(form,catalogs):{m:safeUrls((form.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean))};
+        const customized=Boolean(invite)||form.get('customize')==='1';
+        settings=customized?settingsFromForm(form,catalogs):{m:safeUrls((form.get('sources')||'').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean))};
         if(customized&&!selectedCatalogs(catalogs,settings).length)throw new Error('Bitte mindestens einen verfügbaren Katalog auswählen.');
         const personal=customized||settings.m.length;
-        const prefix=personal?'/u/'+encodeSettings(settings):'';
-        return html(installationPage({version:VERSION,url:origin+prefix+'/manifest.json',settings,catalogs,browserAllowed}));
+        configPrefix=personal?'/u/'+encodeSettings(settings):'';
+        if(invite){
+          name=(form.get('deviceName')||'').trim();
+          if(!name||name.length>48)throw new Error('Bitte deinem Gerät einen Namen geben (maximal 48 Zeichen).');
+        }
       }catch(error){
         const chosen=form.getAll('catalog').filter(id=>/^defootball_[a-z0-9_-]{2,90}$/.test(id)).slice(0,256);
         return html(configurePage({version:VERSION,catalogs,settings:{m:[],c:chosen,b:form.get('browser')==='on'},
-          rawSources:form.get('sources')||'',browserAllowed,error:error.message}),400);
+          rawSources:form.get('sources')||'',browserAllowed,accessPrefix,invite,deviceName:form.get('deviceName')||'',
+          error:error.message}),400);
       }
+      const authorizedPrefix=invite?await invite.activate(name):accessPrefix;
+      if(invite&&!authorizedPrefix)return html('<!doctype html><meta charset="utf-8"><p>Einladung nicht mehr verfügbar.</p>',410);
+      return html(installationPage({version:VERSION,url:origin+authorizedPrefix+configPrefix+'/manifest.json',settings,catalogs,browserAllowed,privateMode}));
     }
-    let pathname=url.pathname,prefix='',sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(',')),settings={m:[]};
+    let pathname=url.pathname,prefix=accessPrefix,sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(',')),settings={m:[]};
     const match=pathname.match(new RegExp('^/u/([A-Za-z0-9_-]{1,'+MAX_CONFIG_LENGTH+'})(/.*)$'));
-    if(match){pathname=match[2];prefix=`/u/${match[1]}`;settings=decodeSettings(match[1]);sources=settings.m;env=configuredPlayback(env,settings);}
-    if(pathname==='/configure')return html(configurePage({version:VERSION,catalogs:configurationCatalogs(await leagues(env,fetcher)),settings,browserAllowed}));
+    if(match){pathname=match[2];prefix+=`/u/${match[1]}`;settings=decodeSettings(match[1]);sources=settings.m;env=configuredPlayback(env,settings);}
+    if(pathname==='/configure')return html(configurePage({version:VERSION,catalogs:configurationCatalogs(await leagues(env,fetcher)),settings,browserAllowed,accessPrefix}));
+    if(privateMode&&pathname.startsWith('/debug/'))return json({error:'Nicht gefunden'},404);
     const nativeCheck=pathname.match(/^\/debug\/daddy-native\/([1-9]\d{0,5})\.json$/);
     if(nativeCheck){
       const result=await resolveDaddyChannel(nativeCheck[1],fetcher,{signal:request.signal,playbackOrigin:origin});
@@ -437,7 +450,7 @@ export async function handle(request,env={},fetcher=fetch) {
       const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
       if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
       const nativeStatuses=[];
-      const streams=await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin,
+      const streams=await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin+accessPrefix,
         onNativeDiagnostic:(channel,result)=>nativeStatuses.push(channel+':'+result.status+
           (result.checks?.failure?':'+result.checks.failure:''))});
       const response=json({streams},200,0);
@@ -449,7 +462,7 @@ export async function handle(request,env={},fetcher=fetch) {
       // Avoid a second, serial ESPN request in image paths. An 8s delay is
       // enough for NuvioTV's image loader to time out on the poster.
       const cache=typeof caches!=='undefined' && caches.default ? caches.default : null;
-      const cacheKey=new Request(request.url);
+      const cacheKey=new Request(privateMode?origin+pathname+url.search:request.url);
       if(cache){const hit=await cache.match(cacheKey);if(hit)return hit;}
       const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[3]);if(!game)return json({error:'Spiel nicht gefunden'},404);
       const svg=image[1]==='background' ? await makeMatchBackground(game,fetcher) :
@@ -462,6 +475,10 @@ export async function handle(request,env={},fetcher=fetch) {
       if(cache)await cache.put(cacheKey,response.clone());
       return response;}
     return json({error:'Nicht gefunden'},404);
-  }catch(err){return json({error:'Anfrage fehlgeschlagen',detail:String(err.message||err).slice(0,130)},400,20);}
+  }catch(err){return json({error:'Anfrage fehlgeschlagen',...(privateMode?{}:{detail:String(err.message||err).slice(0,130)})},400,20);}
+}
+export async function handle(request,env={},fetcher=fetch) {
+  if(privateAccessEnabled(env))return handlePrivateAccess(request,env,route=>handleAddon(request,env,fetcher,route));
+  return handleAddon(request,env,fetcher);
 }
 export default {fetch(request,env){return handle(request,env);}};

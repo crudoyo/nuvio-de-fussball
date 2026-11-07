@@ -1,0 +1,162 @@
+// End-to-end test in workerd with an isolated local D1 database and throwaway credentials.
+import assert from 'node:assert/strict';
+import {spawn,spawnSync} from 'node:child_process';
+import {once} from 'node:events';
+import {mkdir,mkdtemp,realpath,rm} from 'node:fs/promises';
+import {createServer} from 'node:net';
+import {basename,dirname,join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
+import {fileURLToPath} from 'node:url';
+import {accessHash,newAccessToken} from '../src/private-store.js';
+import {encodeSettings} from '../src/addon-config.js';
+import {VERSION} from '../src/worker.js';
+
+const cwd=await realpath(fileURLToPath(new URL('../',import.meta.url)));
+const parent=join(cwd,'.wrangler');
+await mkdir(parent,{recursive:true});
+assert.equal(await realpath(parent),parent,'Test database must stay inside the workspace');
+const directory=await mkdtemp(join(parent,'private-test-'));
+const cli=join(cwd,'node_modules','wrangler','bin','wrangler.js');
+const flags=['--local','--config','wrangler.private.jsonc','--persist-to',directory];
+const adminKey=newAccessToken();
+const redact=value=>String(value??'').replace(/[A-Za-z0-9_-]{43}/g,'[redacted]');
+function wrangler(args){
+  const result=spawnSync(process.execPath,[cli,...args,...flags],{cwd,encoding:'utf8',windowsHide:true,timeout:45000});
+  if(result.status!==0)throw Error('Local D1 setup failed: '+redact(result.error||result.stderr||result.stdout));
+}
+async function freePort(){
+  const server=createServer();
+  server.listen(0,'127.0.0.1');
+  await once(server,'listening');
+  const {port}=server.address();
+  await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+  return port;
+}
+let child,log='';
+try{
+  wrangler(['d1','migrations','apply','PRIVATE_DB']);
+  const expiredFriend=crypto.randomUUID(),expiredToken=newAccessToken(),past=Date.now()-1000;
+  wrangler(['d1','execute','PRIVATE_DB','--command',
+    `INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${expiredFriend}','Ablaufprobe',1,${past});
+    INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
+    VALUES('${crypto.randomUUID()}','${expiredFriend}','${await accessHash(expiredToken)}',${past},${past});`]);
+  const port=await freePort(),origin=`http://127.0.0.1:${port}`;
+  child=spawn(process.execPath,[cli,'dev',...flags,'--ip','127.0.0.1','--port',String(port),
+    '--var','PRIVATE_ADMIN_KEY:'+adminKey,'--log-level','error','--show-interactive-dev-session','false'],
+  {cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  for(const stream of [child.stdout,child.stderr])stream.on('data',part=>{log=(log+part).slice(-4500);});
+  let session='';
+  async function request(path,{body,cookie='',from=origin,method=body?'POST':'GET'}={}){
+    return fetch(new URL(path,origin),{method,redirect:'manual',
+      headers:{...(cookie?{cookie}:{}),...(method==='POST'?{origin:from}:{})},
+      body:body?new URLSearchParams(body):undefined,signal:AbortSignal.timeout(17000)});
+  }
+  async function expect(response,status,label){
+    assert.equal(response.status,status,label);
+    assert.equal(response.headers.get('cache-control'),'private, no-store',label);
+    return response.text();
+  }
+  async function admin(action,body,status,from){
+    return expect(await request('/admin/'+action,{body,cookie:session,from}),status,'Admin '+action);
+  }
+  function field(html,id){
+    return new RegExp('<input[^>]*id="'+id+'"[^>]*value="([^"]+)"').exec(html)?.[1];
+  }
+  function href(html,id){
+    return new RegExp('<a[^>]*id="'+id+'"[^>]*href="([^"]+)"').exec(html)?.[1];
+  }
+  let ready=false;
+  for(let i=0;i<45&&child.exitCode===null;i++){
+    try{
+      const response=await fetch(origin+'/admin',{signal:AbortSignal.timeout(1000)});
+      if(response.ok&&/Verwaltung anmelden/.test(await response.text())){
+        assert.equal(response.headers.get('referrer-policy'),'same-origin','Login form must retain its POST Origin');
+        ready=true;break;
+      }
+    }catch{}
+    await delay(400);
+  }
+  assert(ready,'Private workerd did not start: '+redact(log));
+  for(const path of ['/','/configure','/manifest.json','/u/'+encodeSettings({m:[]})+'/manifest.json',
+    '/poster/bl1/42.png','/stream/tv/defootball_bl1_42.json','/debug/sources.json','/daddy/live/426.m3u8']){
+    await expect(await request(path),404,'Public route must stay closed');
+  }
+  await expect(await request('/e/'+expiredToken),404,'Expired invitation');
+  await expect(await request('/admin/friend',{body:{name:'Test',limit:'2',hours:'72'}}),403,'Unauthenticated admin');
+  await expect(await request('/admin/login',{body:{key:adminKey},from:'https://other.example'}),403,'Cross-origin login');
+  await expect(await request('/admin/login',{body:{key:adminKey},from:'null'}),403,'Opaque origin is not trusted');
+  await expect(await request('/admin/login',{body:{key:newAccessToken()}}),403,'Wrong admin secret');
+  const login=await request('/admin/login',{body:{key:adminKey}});
+  await expect(login,303,'Admin login');
+  const cookie=login.headers.get('set-cookie');
+  assert(cookie&&/Secure; HttpOnly; SameSite=Strict/.test(cookie)&&!cookie.includes(adminKey),'Secure admin session');
+  session=cookie.split(';')[0];
+  await expect(await request('/admin/friend',{cookie:session.slice(0,-1)+(session.endsWith('A')?'B':'A'),
+    body:{name:'Test',limit:'2',hours:'72'}}),403,'Modified session signature');
+  await admin('invite',{friend:expiredFriend,hours:'24'},201);
+  const created=await admin('friend',{name:'Max <Test>',limit:'2',hours:'72'},201);
+  assert(created.includes('Max &lt;Test&gt;')&&!created.includes('Max <Test>'),'Escaped friend label');
+  const friend=/<section class="panel" id="friend-([^"]+)"><div class="row"><div><h2>Max &lt;Test&gt;<\/h2>/.exec(created)?.[1];
+  const invite=field(created,'invite-url');
+  assert(friend&&invite,'Friend and invitation were created');
+  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(invite),'Cleartext invitation only shown at creation');
+  await admin('block',{friend,blocked:'1'},403,'https://other.example');
+  const opening=await expect(await request(invite),200,'Open invitation');
+  assert(opening.includes('Gerät aktivieren'),'Invitation includes activation form');
+  await expect(await request(invite),200,'Preview must not consume invite');
+  const selected=['defootball_bl3_sunday','defootball_bl1_friday'];
+  const activation=[['deviceName','Tablet'],...selected.map(id=>['catalog',id])];
+  await expect(await request(invite,{body:activation,from:'https://other.example'}),403,'Cross-origin activation');
+  await expect(await request(invite,{body:{deviceName:'Tablet'}}),400,'Invalid configuration must not consume invite');
+  const simultaneous=await Promise.all([request(invite,{body:activation}),request(invite,{body:activation})]);
+  assert.equal(simultaneous.filter(r=>r.status===200).length,1,'Exactly one concurrent redemption can succeed');
+  assert(simultaneous.every(r=>[200,404,410].includes(r.status)),'Only the winning request receives a key');
+  const [install]=await Promise.all(simultaneous.sort((a,b)=>a.status-b.status).map(r=>r.text()));
+  const tablet=field(install,'manifest-url');
+  assert(tablet?.includes('/a/')&&tablet.endsWith('/manifest.json'),'Protected import URL');
+  for(const app of ['nuvio','stremio'])assert.equal(href(install,'install-'+app),tablet.replace('http:',app+':'),'App link preserves full private path');
+  const manifest=JSON.parse(await expect(await request(tablet),200,'Private manifest'));
+  assert.equal(manifest.version,VERSION);
+  assert.deepEqual(manifest.catalogs.map(c=>c.id),selected);
+  const prefix=new URL(tablet).pathname.split('/').slice(0,3).join('/');
+  const edit=await expect(await request(href(install,'edit-settings')),200,'Restore private settings');
+  assert(edit.includes('action="'+prefix+'/generate"'),'Edit form retains key');
+  assert(edit.includes('value="defootball_bl3_sunday" checked'),'Edit form retains selection');
+  const changed=await expect(await request(prefix+'/generate',{body:{customize:'1',catalog:'defootball_ucl',browser:'on'}}),200,'Update private settings');
+  assert(field(changed,'manifest-url')?.startsWith(origin+prefix+'/u/'),'Updated profile uses the same key');
+  await expect(await request(invite),404,'Consumed invite cannot be opened again');
+  await expect(await request(prefix+'/debug/sources.json'),404,'Friend diagnostics remain closed');
+  const reservations=await Promise.all([request('/admin/invite',{cookie:session,body:{friend,hours:'72'}}),
+    request('/admin/invite',{cookie:session,body:{friend,hours:'72'}})]);
+  assert.deepEqual(reservations.map(r=>r.status).sort(),[201,409],'Concurrent reservations obey the limit');
+  const reservationsHtml=await Promise.all(reservations.map(r=>r.text()));
+  const second=field(reservationsHtml[reservations.findIndex(r=>r.status===201)],'invite-url');
+  assert(second,'Second device invitation created');
+  const laptop=field(await expect(await request(second,{body:{deviceName:'Laptop',catalog:'defootball_bl1'}}),200,'Activate laptop'),'manifest-url');
+  assert(laptop&&laptop!==tablet,'Each device receives a distinct key');
+  await admin('limit',{friend,limit:'1'},409);
+  const overview=await expect(await request('/admin',{cookie:session}),200,'List devices');
+  assert(overview.includes('2 von 2 Plätzen belegt oder reserviert'));
+  const tabletSlot=/<h3>Tablet<\/h3>[\s\S]*?name="slot" value="([^"]+)"/.exec(overview)?.[1];
+  assert(tabletSlot,'Tablet slot listed');
+  await admin('revoke',{friend,slot:tabletSlot},200);
+  await expect(await request(tablet),403,'Tablet is revoked');
+  await expect(await request(laptop),200,'Laptop remains authorized');
+  await admin('limit',{friend,limit:'1'},200);
+  await admin('block',{friend,blocked:'1'},200);
+  await expect(await request(laptop),403,'Friend-wide pause blocks active laptop');
+  await admin('block',{friend,blocked:'0'},200);
+  await expect(await request(laptop),200,'Laptop works after unpause');
+  await expect(await request(tablet),403,'Previously revoked tablet stays revoked');
+  await admin('logout',{},303);
+  console.log('Private workerd/D1 verified: single-use invites, concurrent slot limits, per-device revocation, protected imports and admin sessions.');
+}finally{
+  if(child&&child.exitCode===null){
+    const exit=once(child,'exit');
+    child.kill('SIGTERM');
+    await Promise.race([exit,delay(2000)]);
+  }
+  const resolved=await realpath(directory);
+  if(dirname(resolved)!==parent||!basename(resolved).startsWith('private-test-'))throw Error('Unexpected test directory');
+  await rm(resolved,{recursive:true,force:true,maxRetries:5,retryDelay:150});
+}

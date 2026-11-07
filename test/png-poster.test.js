@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Resvg,initWasm} from '@resvg/resvg-wasm';
-import {handle} from '../src/worker.js';
+import {handle,VERSION} from '../src/worker.js';
 
 const pngSignature=Uint8Array.of(137,80,78,71,13,10,26,10);
 const fixture={
@@ -29,8 +29,9 @@ test('all football catalog posters now advertise versioned PNG, not SVG',async()
   const result=await reply.json();
   assert.equal(reply.status,200);
   const [card]=result.metas;
-  assert.match(card.poster,/\/poster\/bl1\/62501\.png\?v=0\.5\.0$/);
-  assert.match(card.background,/\/background\/bl1\/62501\.png\?v=0\.5\.0$/);
+  assert.equal(new URL(card.poster).pathname,'/poster/bl1/62501.png');
+  assert.equal(new URL(card.background).pathname,'/background/bl1/62501.png');
+  for(const url of [card.poster,card.background])assert.equal(new URL(url).searchParams.get('v'),VERSION);
 });
 
 test('poster PNG endpoint emits raster Content-Type and supports SVG compatibility',async()=>{
