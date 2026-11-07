@@ -197,7 +197,11 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
 }
 export async function automaticDaddyStreams(game,events,matchScore,env,fetcher,options={}){
   if(String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()!=='true')return [];
-  const channels=[...new Map(matchDaddyEvents(game,events,matchScore).flatMap(e=>e.channels).map(c=>[c.id,c])).values()].slice(0,2);
+  return automaticDaddyEventStreams(matchDaddyEvents(game,events,matchScore),env,fetcher,options);
+}
+export async function automaticDaddyEventStreams(events,env,fetcher,options={}){
+  if(String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()!=='true')return [];
+  const channels=[...new Map(events.flatMap(e=>e.channels).map(c=>[c.id,c])).values()].slice(0,2);
   const results=await Promise.all(channels.map(async channel=>{
     const result=await resolveDaddyChannel(channel.id,fetcher,options);
     options.onDiagnostic?.(channel.id,result);

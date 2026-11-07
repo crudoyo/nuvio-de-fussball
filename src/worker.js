@@ -13,14 +13,15 @@ import { espnTeamsUrl, attachFallbackCrests, curatedCrest } from './crests.js';
 import { badgeImageUrl, badgeData } from './graphics.js';
 import { THIRD_LIGA_CLUBS_2026, thirdLigaCrest } from './third-league-crests.js';
 import {
-  getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPublicDiagnostic,
+  getDaddySchedule, matchDaddyEvents, externalDaddyPlayers, daddyPlayersForEvents, daddyPublicDiagnostic,
   diagnoseDaddyFixture
 } from './daddylive.js';
-import {nativeMappedStreams} from './native-streams.js';
+import {nativeMappedStreams,nativeMappedEventStreams} from './native-streams.js';
 import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
-import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
+import {automaticDaddyStreams,automaticDaddyEventStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
+import {bundesligaSimulcasts,simulcastArtwork,SIMULCAST_ART,SIMULCAST_NAME,SIMULCAST_PREFIX} from './bundesliga-simulcast.js';
 import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
@@ -202,6 +203,12 @@ function meta(m,league,origin,prefix='',statistics=null) {
     ...(round?{matchday:{number:matchdayNumber(m),name:round}}:{}),
     team1:{name:home,logo:teamLogo(m.team1)},team2:{name:away,logo:teamLogo(m.team2)},
     behaviorHints:{defaultVideoId:id}};
+}
+function simulcastMeta(event,origin,prefix){
+  const id=SIMULCAST_PREFIX+event.matchID,kickoff=dateLabel(event);
+  return {id,type:'tv',name:SIMULCAST_NAME,description:kickoff,posterShape:'landscape',
+    poster:`${origin}${prefix}/poster/${SIMULCAST_ART}.png`,background:`${origin}${prefix}/background/${SIMULCAST_ART}.png`,
+    released:event.matchDateTimeUTC,releaseInfo:`${weekdayLabel(event)} · ${kickoff}`,behaviorHints:{defaultVideoId:id}};
 }
 function manifest(list,settings={}) {
   return {id:'com.community.nuvio.defootball',version:VERSION,name:ADDON_NAME,description:'Spielpläne deutscher Ligen und europäischer Wettbewerbe.',types:['tv'],resources:[{name:'catalog',types:['tv']},{name:'meta',types:['tv'],idPrefixes:['defootball_']},{name:'stream',types:['tv'],idPrefixes:['defootball_']}],catalogs:selectedCatalogs(list.flatMap(leagueCatalogs),settings),behaviorHints:{configurable:true}};
@@ -429,20 +436,43 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
       },200,0);
     }
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/|\/background\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
+    const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
+    if(details?.[2].startsWith(SIMULCAST_PREFIX)){
+      const daddy=await getDaddySchedule(env,fetcher,{signal:request.signal});
+      if(!daddy.reachable)return json({error:'Spielplan nicht verfügbar'},503,0);
+      const event=bundesligaSimulcasts(daddy.events).find(entry=>SIMULCAST_PREFIX+entry.matchID===details[2]);
+      if(!event)return json({error:'Konferenz nicht gefunden'},404,0);
+      if(details[1]==='meta')return json({meta:simulcastMeta(event,origin,prefix)});
+      const mapped=nativeMappedEventStreams([event],env);
+      const [verified,native]=await Promise.all([
+        String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'?verifiedNativeStreams(mapped,fetcher):mapped,
+        automaticDaddyEventStreams([event],env,fetcher,{signal:request.signal,origin:daddy.siteOrigin,playbackOrigin:origin+accessPrefix})
+      ]);
+      const browser=String(env.NATIVE_ONLY||'').toLowerCase()!=='true'&&String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
+        ?daddyPlayersForEvents([event],daddy.siteOrigin):[];
+      const streams=[...new Map([...verified,...native,...browser].map(stream=>[stream.url||stream.externalUrl,stream])).values()];
+      const response=json({streams},200,0);
+      response.headers.set('cache-control','no-store');
+      return response;
+    }
     const list=await leagues(env,fetcher);
     if(pathname==='/manifest.json')return json(manifest(list,settings),200,3600);
     const catalog=pathname.match(/^\/catalog\/tv\/([^/]+)\.json$/);
     if(catalog){
       if(settings.c&&!settings.c.includes(catalog[1]))return json({metas:[]});
       const found=parseCatalog(catalog[1],list);if(!found)return json({metas:[]});
-      const [games,table]=await Promise.all([
-        fixtures(found.league,env,fetcher),standings(found.league,env,fetcher)
+      const [games,table,simulcasts]=await Promise.all([
+        fixtures(found.league,env,fetcher),standings(found.league,env,fetcher),
+        found.league.shortcut.toLowerCase()==='bl1'
+          ?getDaddySchedule(env,fetcher,{signal:request.signal}).then(schedule=>selectCalendarView(bundesligaSimulcasts(schedule.events),found.view))
+          :[]
       ]);
       const selected=found.view==='upcoming'?selectUpcoming(games):selectCalendarView(games,found.view);
       const statistics=seasonStatistics(found.league,games,table);
-      return json({metas:selected.map(m=>meta(m,found.league,origin,prefix,statistics))},200,120);
+      const metas=[...simulcasts.map(event=>simulcastMeta(event,origin,prefix)),...selected.map(m=>meta(m,found.league,origin,prefix,statistics))];
+      if(simulcasts.length)metas.sort((a,b)=>Date.parse(a.released)-Date.parse(b.released));
+      return json({metas},200,120);
     }
-    const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
     if(details){
       const found=parseGame(details[2],list);if(!found)return json({error:'Spiel nicht gefunden'},404);
       const [games,table]=await Promise.all([fixtures(found.league,env,fetcher),
@@ -458,15 +488,23 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
       response.headers.set('cache-control','no-store');return response;
     }
     const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
-    if(image){const league=list.find(x=>x.shortcut.toLowerCase()===image[2].toLowerCase());if(!league)return json({error:'Liga nicht gefunden'},404);
+    if(image){
+      const isSimulcast=image[2]+'/'+image[3]===SIMULCAST_ART;
+      const league=list.find(x=>x.shortcut.toLowerCase()===image[2].toLowerCase());
+      if(!isSimulcast&&!league)return json({error:'Liga nicht gefunden'},404);
       // Avoid a second, serial ESPN request in image paths. An 8s delay is
       // enough for NuvioTV's image loader to time out on the poster.
       const cache=typeof caches!=='undefined' && caches.default ? caches.default : null;
       const cacheKey=new Request(privateMode?origin+pathname+url.search:request.url);
       if(cache){const hit=await cache.match(cacheKey);if(hit)return hit;}
-      const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[3]);if(!game)return json({error:'Spiel nicht gefunden'},404);
-      const svg=image[1]==='background' ? await makeMatchBackground(game,fetcher) :
-        await makeMatchPoster(game,matchCompetition(game,league),dateLabel(game),status(game),fetcher);
+      let svg;
+      if(isSimulcast)svg=simulcastArtwork(image[1]==='background');
+      else{
+        const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[3]);
+        if(!game)return json({error:'Spiel nicht gefunden'},404);
+        svg=image[1]==='background' ? await makeMatchBackground(game,fetcher) :
+          await makeMatchPoster(game,matchCompetition(game,league),dateLabel(game),status(game),fetcher);
+      }
       if(image[4]==='svg')return new Response(svg,{headers:{'content-type':'image/svg+xml; charset=utf-8',...corsHeaders(300)}});
       const renderer=typeof env.__testPngRenderer==='function' ? env.__testPngRenderer :
         (await import('./poster-png.js')).renderPng;

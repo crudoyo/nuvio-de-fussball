@@ -127,7 +127,7 @@ try{
   assert(!field(oldPassword,'invitation-code'),'Old random passwords cannot be reconstructed');
   assert.match(oldPassword,/action="\/admin\/replace-password"/);
   const replacement=await admin('replace-password',oldFields,200);
-  assert.match(replacement,/Einmal einlösbar · ohne Ablaufdatum/);
+  assert.match(replacement,/Einladung offen<\/h3><p class="hint">ohne Ablaufdatum/);
   const replaced=field(replacement,'invitation-code');
   assert(invitationCodePattern.test(replaced)&&replaced!==oldCode);
   await admin('invite',{friend:oldFriend,hours:'24'},409);
@@ -138,7 +138,7 @@ try{
   await admin('invite',{friend:setupFriend,hours:'24'},201);
   const created=await admin('friend',{name:'Max <Test>',limit:'2',hours:'forever'},201);
   assert(created.includes('Max &lt;Test&gt;')&&!created.includes('Max <Test>'),'Escaped friend label');
-  assert.match(created,/Einmal einlösbar · ohne Ablaufdatum/);
+  assert.match(created,/Einladung offen<\/h3><p class="hint">ohne Ablaufdatum/);
   const friend=/<section class="panel" id="friend-([^"]+)"><div class="row"><div><h2>Max &lt;Test&gt;<\/h2>/.exec(created)?.[1];
   const code=field(created,'invitation-code');
   assert.equal(field(created,'configure-url'),origin+configure);
@@ -146,7 +146,10 @@ try{
   const mainSlot=slotFor(created,friend,'Einladung offen');
   assert(mainSlot);
   const mainFields={friend,slot:mainSlot};
-  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(code),'Overview does not reveal open passwords');
+  const dashboard=await expect(await request('/admin',{cookie:session}),200,'Admin overview');
+  const panel=dashboard.split('id="friend-'+friend+'"')[1].split('</section>')[0];
+  assert.equal(field(panel,'password-'+mainSlot),code,'Open password is shown in the correct account panel');
+  assert(!(await expect(await request('/admin'),200,'Unauthenticated admin page')).includes(code));
   await expect(await request('/admin/password',{body:mainFields}),403,'Password lookup requires admin login');
   await admin('password',mainFields,403,'https://other.example');
   await admin('password',{...mainFields,friend:oldFriend},404);
@@ -166,6 +169,7 @@ try{
   assert(setupCookie&&/Path=\/configure; Secure; HttpOnly; SameSite=Strict; Max-Age=1800/.test(setupCookie)&&!setupCookie.includes(code));
   const setupSession=setupCookie.split(';')[0];
   await expect(await request(configurationLogin,{body:{code}}),403,'Password is consumed at login');
+  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview after login')).includes(code));
   await admin('password',mainFields,404);
   await admin('replace-password',mainFields,404);
   const opening=await expect(await request(configure,{cookie:setupSession,client:phone}),200,'Open configuration on phone');
@@ -232,8 +236,20 @@ try{
   await admin('block',{friend,blocked:'0'},200);
   await expect(await request(laptop),200,'Laptop works after unpause');
   await expect(await request(tvImport),403,'Previously revoked TV stays revoked');
+  await admin('limit',{friend,limit:'2'},200);
+  const openAtDeletion=field(await admin('invite',{friend,hours:'forever'},201),'invitation-code');
+  assert(invitationCodePattern.test(openAtDeletion));
+  assert.match(await admin('delete',{friend},200),/Endgültig löschen/);
+  await expect(await request(laptop),200,'Asking for confirmation does not delete the account');
+  await expect(await request('/admin/delete',{body:{friend,confirm:'1'}}),403,'Anonymous account deletion');
+  await admin('delete',{friend,confirm:'1'},403,'https://other.example');
+  const afterDeletion=await admin('delete',{friend,confirm:'1'},200);
+  assert(!afterDeletion.includes('id="friend-'+friend+'"')&&!afterDeletion.includes('Max &lt;Test&gt;'));
+  assert(afterDeletion.includes('id="friend-'+oldFriend+'"'),'Unrelated accounts are preserved');
+  await expect(await request(laptop),404,'Deleting the account invalidates its active import');
+  await expect(await request(configurationLogin,{body:{code:openAtDeletion}}),403,'Deleting the account invalidates open passwords');
   await admin('logout',{},303);
-  console.log('Private workerd/D1 verified: password lookup and replacement, one-time login, setup expiry, concurrent slot limits, revocation and protected imports.');
+  console.log('Private workerd/D1 verified: inline passwords, replacement, one-time login, slot limits, revocation and account deletion.');
 }finally{
   if(child&&child.exitCode===null){
     const exit=once(child,'exit');

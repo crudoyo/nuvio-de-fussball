@@ -73,16 +73,20 @@ export function nativeStreamRecord(entry,channelLabel){
   };
 }
 export function nativeMappedStreams(game,events,matchScore,env={}){
+  if(!env.NATIVE_CHANNEL_STREAMS_JSON)return [];
+  const matches=events.map(e=>({...e,score:matchScore(game,{name:e.name,startTime:e.startTime})}))
+    .filter(e=>e.score>=12&&Math.abs(Date.parse(e.startTime)-Date.parse(game.matchDateTimeUTC))<=8*3600000)
+    .sort((a,b)=>b.score-a.score).slice(0,3);
+  return nativeMappedEventStreams(matches,env);
+}
+export function nativeMappedEventStreams(events,env={}){
   const raw=env.NATIVE_CHANNEL_STREAMS_JSON;
   if(typeof raw!=='string'||!raw||raw.length>MAX_CONFIG_BYTES)return [];
   let conf;
   try{conf=JSON.parse(raw);}catch{return [];}
   if(!conf||typeof conf!=='object'||Array.isArray(conf))return [];
-  const matches=events.map(e=>({...e,score:matchScore(game,{name:e.name,startTime:e.startTime})}))
-    .filter(e=>e.score>=12&&Math.abs(Date.parse(e.startTime)-Date.parse(game.matchDateTimeUTC))<=8*3600000)
-    .sort((a,b)=>b.score-a.score).slice(0,3);
   const results=[],seen=new Set();
-  for(const match of matches){
+  for(const match of events){
     for(const channel of match.channels||[]){
       const id=String(channel.id||'');
       if(!CHANNEL_ID.test(id)||seen.has(id))continue;

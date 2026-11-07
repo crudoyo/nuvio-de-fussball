@@ -28,7 +28,7 @@ export function configurationLogin(message=''){
     ${message?`<p class="danger" role="alert">${escape(message)}</p>`:''}
     <form method="post" action="/configure/login"><label>Passwort<input type="password" name="code" autocomplete="one-time-code" maxlength="27" required></label><button class="primary" type="submit">Anmelden</button></form></div></section>`,'Anmelden');
 }
-export function adminPage(data,{message='',configureUrl='',invitationCode='',expires,replaceInvite}={}){
+export function adminPage(data,{message='',configureUrl='',invitationCode,confirmDelete}={}){
   const {friends,slots,audit,now}=data;
   const friendRows=friends.map(friend=>{
     const own=slots.filter(s=>s.friend_id===friend.id),used=counts(own,now);
@@ -39,31 +39,35 @@ export function adminPage(data,{message='',configureUrl='',invitationCode='',exp
         friend.blocked?(active?'Zugang pausiert':'Einladung pausiert'):
         active?'Schlüssel aktiv':claimed?'Konfiguration läuft':'Einladung offen';
       const available=slot.revoked_at===null&&!expired,fields={friend:friend.id,slot:slot.id};
-      const password=available&&!active&&!claimed&&!friend.blocked
-        ?form('/admin/password','<button type="submit">Passwort anzeigen</button>',fields):'';
+      const open=available&&!active&&!claimed&&!friend.blocked;
+      const codeId=slot.password===invitationCode?'invitation-code':'password-'+slot.id;
+      const password=slot.password?`<div class="actions" style="margin-top:10px"><label>Passwort<input id="${escape(codeId)}" type="text" readonly value="${escape(slot.password)}"></label><button type="button" data-copy-password="${escape(codeId)}">Einladung kopieren</button><span class="hint" role="status"></span></div>`:'';
+      const replace=open&&!slot.password?form('/admin/replace-password','<button type="submit">Passwort ersetzen</button>',fields):'';
       const revoke=available?form('/admin/revoke',
         `<button class="danger" type="submit">${active?'Schlüssel sperren':'Einladung zurückziehen'}</button>`,fields):'';
       const label=active?'Schlüssel '+(index+1):status;
       let detail=active?status:'';
       if(!active&&!expired&&slot.revoked_at===null)detail=validity(deadline(slot));
-      return `<div class="slot row"><div><h3>${escape(label)}</h3>${detail?`<p class="hint">${escape(detail)}</p>`:''}</div><div class="actions">${password}${revoke}</div></div>`;
+      return `<div class="slot"><div class="row"><div><h3>${escape(label)}</h3>${detail?`<p class="hint">${escape(detail)}</p>`:''}</div><div class="actions">${replace}${revoke}</div></div>${password}</div>`;
     }).join('');
     return `<section class="panel" id="friend-${escape(friend.id)}"><div class="row"><div><h2>${escape(friend.name)}</h2><p class="hint">${used} / ${friend.slot_limit} belegt · ${friend.blocked?'Gesperrt':'Freigegeben'}</p></div>
       ${form('/admin/block',`<button class="${friend.blocked?'':'danger'}" type="submit">${friend.blocked?'Zugang freigeben':'Zugang sperren'}</button>`,{friend:friend.id,blocked:friend.blocked?'0':'1'})}</div>
       ${slotRows}
       <div class="row" style="margin-top:14px">${form('/admin/limit',`<label>Max. Schlüssel<select name="limit">${limits(friend.slot_limit)}</select></label><button type="submit">Limit speichern</button>`,{friend:friend.id})}
-      ${!friend.blocked&&used<friend.slot_limit?form('/admin/invite',expiry+'<button type="submit">Weitere Einladung</button>',{friend:friend.id}):''}</div></section>`;
+      ${!friend.blocked&&used<friend.slot_limit?form('/admin/invite',expiry+'<button type="submit">Weitere Einladung</button>',{friend:friend.id}):''}</div>
+      <div class="slot">${confirmDelete===friend.id
+        ?form('/admin/delete','<p class="hint">Alle Einladungen und Importlinks werden ungültig.</p><button class="danger" type="submit">Endgültig löschen</button><a href="/admin">Abbrechen</a>',{friend:friend.id,confirm:'1'})
+        :form('/admin/delete','<button class="danger" type="submit">Account löschen</button>',{friend:friend.id})}</div></section>`;
   }).join('');
   return page(`<div class="row"><p class="brand">${ADDON_NAME}</p>${form('/admin/logout','<button type="submit">Abmelden</button>')}</div><div class="heading"><h1>Privater Zugang</h1></div>
     ${message?`<p class="message" role="status">${escape(message)}</p>`:''}
-    ${replaceInvite?form('/admin/replace-password','<button class="primary" type="submit">Passwort ersetzen</button>',replaceInvite):''}
-    ${invitationCode?`<section class="panel"><h2>Einladung bereit</h2><p class="hint">Einmal einlösbar · ${escape(validity(expires))}</p><label>Konfigurationsseite<input id="configure-url" type="url" readonly value="${escape(configureUrl)}"></label><label>Passwort<input id="invitation-code" type="text" readonly value="${escape(invitationCode)}"></label><div class="actions" style="margin-top:10px"><button type="button" id="copy-invite">Einladung kopieren</button><span id="copy-feedback" class="hint" role="status"></span></div></section>`:''}
-    <section class="panel"><h2>Einladung bereitstellen</h2>${form('/admin/friend',`<label>Name<input name="name" maxlength="48" required></label><label>Max. Schlüssel<select name="limit">${limits(2)}</select></label>${expiry}<button class="primary" type="submit">Einladung erstellen</button>`)}</section>
+    <section class="panel"><h2>Einladung bereitstellen</h2>${form('/admin/friend',`<label>Name<input name="name" maxlength="48" required></label><label>Max. Schlüssel<select name="limit">${limits(2)}</select></label>${expiry}<button class="primary" type="submit">Einladung erstellen</button>`)}<label style="margin-top:14px">Konfigurationsseite<input id="configure-url" type="url" readonly value="${escape(configureUrl)}"></label></section>
     ${friendRows}
     <details class="panel"><summary>Verwaltungsprotokoll</summary>${audit.length?`<ol>${audit.map(e=>`<li>${escape(date(e.at))} · ${escape(e.name)} · ${escape(events[e.event]||e.event)}</li>`).join('')}</ol>`:'<p class="hint">Noch keine Einträge.</p>'}</details>`,
-    'Verwaltung',invitationCode?`<script>
-      const url=document.getElementById('configure-url'),code=document.getElementById('invitation-code'),status=document.getElementById('copy-feedback');
-      document.getElementById('copy-invite').addEventListener('click',async()=>{
+    'Verwaltung',`<script>
+      const url=document.getElementById('configure-url');
+      document.querySelectorAll('[data-copy-password]').forEach(button=>button.addEventListener('click',async()=>{
+        const code=document.getElementById(button.dataset.copyPassword),status=button.nextElementSibling;
         try{
           await navigator.clipboard.writeText(url.value+'\\nPasswort: '+code.value);
           status.textContent='Einladung kopiert.';
@@ -71,6 +75,6 @@ export function adminPage(data,{message='',configureUrl='',invitationCode='',exp
           code.focus();code.select();
           status.textContent='Passwort markiert.';
         }
-      });
-    </script>`:'');
+      }));
+    </script>`);
 }

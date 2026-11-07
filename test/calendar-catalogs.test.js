@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {selectWeek,selectWeekday,selectCalendarView,weekWindow,startTime,weekdayLabel} from '../src/matchdays.js';
 import {handle,encodeConfig} from '../src/worker.js';
+import {encodeSettings} from '../src/addon-config.js';
+import {DADDY_CURRENT_SCHEDULE} from '../src/daddylive.js';
 
 const friday=Date.parse('2026-11-06T12:00:00Z');
 const fixture=(id,round,at,finished=false)=>({
@@ -77,6 +79,44 @@ test('dated catch-up games appear in their actual week even without an official 
   assert.deepEqual(selectWeek(games,2,friday),[]);
   assert.deepEqual(selectWeekday(games,7,friday),[]);
   assert.deepEqual(selectCalendarView(games,'unknown',friday),[]);
+});
+
+test('a Bundesliga simulcast is a separate calendar entry with its own channels and artwork',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:friday});
+  const channel=(channel_id,channel_name)=>({channel_id,channel_name});
+  const event=(event,...channels)=>({time:'14:30',event,channels});
+  const schedule={'Saturday 7th November 2026':{Football:[
+    event('Germany - Bundesliga : Simulcast',channel('118','International'),channel('426','DAZN1 DE')),
+    event('1. Bundesliga : Simulcast',channel('426','DAZN1 DE'),channel('427','Alternate')),
+    event('Bundesliga 2 : Simulcast',channel('301','2. Bundesliga')),
+    event('Germany - Bundesliga : Multiview',channel('302','Multiview')),
+    event('England - Premier League : Simulcast',channel('303','Other competition'))
+  ]}};
+  const fetcher=async url=>{
+    const path=String(url);
+    if(path===DADDY_CURRENT_SCHEDULE)return Response.json(schedule);
+    if(path.includes('/getmatchdata/'))return Response.json(games);
+    return new Response(null,{status:404});
+  };
+  const env={SEASON:'2026',DADDY_WEB_PLAYERS:'true',NATIVE_CHANNEL_STREAMS_JSON:JSON.stringify({'426':{url:'https://media.example/conference.m3u8'}})};
+  const prefix='/u/'+encodeSettings({m:[],c:['defootball_bl1','defootball_bl1_saturday','defootball_bl1_sunday'],b:true});
+  const get=path=>handle(new Request('https://addon.test'+path),env,fetcher);
+  const catalog=async suffix=>(await (await get(prefix+'/catalog/tv/defootball_bl1'+suffix+'.json')).json()).metas;
+  const saturday=await catalog('_saturday');
+  assert.deepEqual(saturday.map(m=>m.name),['Bundesliga-Konferenz','Heim 4 – Gast 4']);
+  const [conference]=saturday;
+  assert.equal((await catalog('')).filter(m=>m.id===conference.id).length,1);
+  assert(!(await catalog('_sunday')).some(m=>m.id===conference.id));
+  assert.equal(conference.released,'2026-11-07T14:30:00.000Z');
+  assert.deepEqual((await (await get(prefix+'/meta/tv/'+conference.id+'.json')).json()).meta,conference);
+  const poster=await get(new URL(conference.poster).pathname.replace('.png','.svg'));
+  assert.match(await poster.text(),/>Konferenz</);
+  const streamPath='/stream/tv/'+conference.id+'.json';
+  const {streams}=await (await get(prefix+streamPath)).json();
+  assert.equal(streams[0].url,'https://media.example/conference.m3u8');
+  assert.deepEqual(streams.slice(1).map(s=>s.externalUrl?.split('-').at(-1)),['426.php','118.php','427.php']);
+  const native='/u/'+encodeSettings({m:[],b:false});
+  assert.equal((await (await get(native+streamPath)).json()).streams.length,1);
 });
 
 test('two five-row league blocks lead the catalog; every row preserves playable game IDs',async t=>{

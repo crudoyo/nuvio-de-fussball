@@ -43,7 +43,8 @@ for(const league of ['bl1','bl3']){
     if(catalog.metas.some(m=>/Videostreams nur|Sport-Add-on diese Begegnung/.test(m.description||'')))
       throw new Error('Technical stream warning remains in '+id);
     const ids=catalog.metas.map(m=>m.id);
-    if(new Set(ids).size!==ids.length||ids.some(id=>!new RegExp(`^defootball_${league}_\\d+$`).test(id)))
+    const canonicalId=new RegExp(`^defootball_${league}_${league==='bl1'?'(?:simulcast_)?':''}\\d+$`);
+    if(new Set(ids).size!==ids.length||ids.some(id=>!canonicalId.test(id)))
       throw new Error('Invalid canonical game IDs in '+id);
     const dates=catalog.metas.map(m=>Date.parse(m.released)).filter(Number.isFinite);
     if(dates.some((d,i)=>i&&d<dates[i-1]))throw new Error('Unsorted kickoffs in '+id);
@@ -65,8 +66,9 @@ for(const league of ['bl1','bl3']){
   console.log(JSON.stringify({league,currentWeek:weekWindow(now),current:current.length,
     friday:friday.length,saturday:saturday.length,sunday:sunday.length,
     followingWeek:weekWindow(now,1),following:following.length}));
-  if(current.length){
-    const sample=current[0],detail=(await json('/meta/tv/'+sample.id+'.json?release='+version)).meta;
+  const sample=current.find(entry=>!entry.id.startsWith('defootball_bl1_simulcast_'));
+  if(sample){
+    const detail=(await json('/meta/tv/'+sample.id+'.json?release='+version)).meta;
     for(const preview of [sample,detail]){
       if(!preview?.description||!/Siege\/Niederlagen \d+:\d+/.test(preview.description)||
         /Form \(|Videostreams nur/.test(preview.description))throw new Error('Incorrect season statistics in '+league);

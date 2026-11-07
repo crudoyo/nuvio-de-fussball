@@ -292,9 +292,11 @@ export function diagnoseDaddyFixture(game, events, matchScore) {
 }
 /** Public HTML player entry, not a decrypted playlist nor guaranteed playable. */
 export function externalDaddyPlayers(game,events,matchScore,origin=DADDY_PRIMARY) {
-  const matches=matchDaddyEvents(game,events,matchScore);
+  return daddyPlayersForEvents(matchDaddyEvents(game,events,matchScore),origin);
+}
+export function daddyPlayersForEvents(events,origin=DADDY_PRIMARY) {
   const streams=[],seen=new Set();
-  for(const match of matches){
+  for(const match of events){
     for(const channel of match.channels){
       const externalUrl=daddyPlayerUrl(channel.id,origin);
       if(!externalUrl||seen.has(externalUrl))continue;

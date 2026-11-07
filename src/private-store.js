@@ -15,8 +15,9 @@ export async function signAccess(secret,value){
 export const NO_INVITE_EXPIRY=0;
 const validInvitation=`(expires_at=${NO_INVITE_EXPIRY} OR expires_at>?)`;
 const activeFriend='EXISTS(SELECT 1 FROM friends f WHERE f.id=access_slots.friend_id AND f.blocked=0)';
-const openSlot=`id=? AND friend_id=? AND ${validInvitation} AND setup_hash IS NULL
+const openInvitation=`${validInvitation} AND setup_hash IS NULL
   AND activated_at IS NULL AND revoked_at IS NULL AND ${activeFriend}`;
+const openSlot=`id=? AND friend_id=? AND ${openInvitation}`;
 const usedSlots=`SELECT COUNT(*) FROM access_slots s WHERE s.friend_id=f.id
   AND s.revoked_at IS NULL AND (
     s.activated_at IS NOT NULL
@@ -46,12 +47,18 @@ export function accessStore(db,secret,clock=Date.now){
   }
   return {
     async list(){
-      const [friends,slots,audit]=await db.batch([
+      const now=clock();
+      const [friends,slotRows,audit]=await db.batch([
         sql('SELECT id,name,slot_limit,blocked FROM friends ORDER BY created_at,id'),
-        sql('SELECT id,friend_id,expires_at,setup_expires_at,activated_at,revoked_at FROM access_slots ORDER BY created_at,id'),
+        sql(`SELECT id,friend_id,expires_at,setup_expires_at,activated_at,revoked_at,
+          CASE WHEN ${openInvitation} THEN invite_hash END AS pending_hash FROM access_slots ORDER BY created_at,id`,now),
         sql('SELECT a.event,a.at,f.name FROM access_audit a JOIN friends f ON f.id=a.friend_id ORDER BY a.id DESC LIMIT 15')
       ]);
-      return {friends:friends.results,slots:slots.results,audit:audit.results,now:clock()};
+      const slots=await Promise.all(slotRows.results.map(async ({pending_hash,...slot})=>{
+        const code=pending_hash?await codeForSlot(slot.id):null;
+        return {...slot,password:code&&await accessHash(code)===pending_hash?code:null};
+      }));
+      return {friends:friends.results,slots,audit:audit.results,now};
     },
     async createFriend(name,limit,hours){
       const id=crypto.randomUUID(),now=clock(),{token,expires,stmt}=await pendingInvite(id,hours,now);
@@ -110,6 +117,14 @@ export function accessStore(db,secret,clock=Date.now){
     async revoke(friendId,id){
       return Boolean(await sql(`UPDATE access_slots SET revoked_at=? WHERE id=? AND friend_id=?
         AND revoked_at IS NULL RETURNING id`,clock(),id,friendId).first());
+    },
+    async deleteFriend(id){
+      const [, , deleted]=await db.batch([
+        sql('DELETE FROM access_audit WHERE friend_id=?',id),
+        sql('DELETE FROM access_slots WHERE friend_id=?',id),
+        sql('DELETE FROM friends WHERE id=? RETURNING id',id)
+      ]);
+      return deleted.results.length>0;
     }
   };
 }

@@ -4,7 +4,7 @@ import {readSettingsForm} from './addon-config.js';
 
 const COOKIE='__Secure-nuvio-admin',SESSION_SECONDS=8*3600;
 const SETUP_COOKIE='__Secure-nuvio-setup';
-const actions=new Set(['friend','invite','password','replace-password','limit','block','revoke','login','logout']);
+const actions=new Set(['friend','invite','password','replace-password','limit','block','revoke','delete','login','logout']);
 const hoursOptions=new Map([['24',24],['72',72],['168',168],['forever',null]]);
 const limitOptions=new Set(['1','2','3','4']);
 // Losing the explicit flag in a later deploy must not reopen a provisioned private Worker.
@@ -53,8 +53,9 @@ export function protectPrivateResponse(response){
   return new Response(response.body,{status:response.status,headers});
 }
 async function handleAdmin(request,url,store,secret){
+  const configureUrl=url.origin+'/configure';
   if(request.method==='GET'&&url.pathname==='/admin')
-    return html(await loggedIn(request,secret)?adminPage(await store.list()):adminLogin());
+    return html(await loggedIn(request,secret)?adminPage(await store.list(),{configureUrl}):adminLogin());
   const action=url.pathname.slice('/admin/'.length);
   if(request.method!=='POST'||!actions.has(action))return missing();
   if(!sameOrigin(request,url))return forbidden();
@@ -69,8 +70,8 @@ async function handleAdmin(request,url,store,secret){
   }
   const friend=form.get('friend')||'',slot=form.get('slot')||'',limit=form.get('limit');
   const hours=hoursOptions.get(form.get('hours'));
-  const show=async (message='',status=200,{invite,replaceInvite}={})=>html(adminPage(await store.list(),{
-    message,replaceInvite,...(invite?{configureUrl:url.origin+'/configure',invitationCode:invite.token,expires:invite.expires}:{})}),status);
+  const show=async (message='',status=200,{invite,confirmDelete}={})=>html(adminPage(await store.list(),{
+    message,configureUrl,confirmDelete,invitationCode:invite?.token}),status);
   if(action==='friend'){
     const name=(form.get('name')||'').trim();
     if(!name||name.length>48||!limitOptions.has(limit)||hours===undefined)
@@ -78,6 +79,10 @@ async function handleAdmin(request,url,store,secret){
     return show('',201,{invite:await store.createFriend(name,Number(limit),hours)});
   }
   if(!accessIdPattern.test(friend))return text('Ungültiger Freund',400);
+  if(action==='delete'){
+    if(form.get('confirm')!=='1')return show('',200,{confirmDelete:friend});
+    return await store.deleteFriend(friend)?show('Account gelöscht.'):missing();
+  }
   if(action==='invite'){
     if(hours===undefined)return text('Ungültige Gültigkeit',400);
     const invite=await store.invite(friend,hours);
@@ -96,7 +101,7 @@ async function handleAdmin(request,url,store,secret){
   if(action==='password'||action==='replace-password'){
     const invite=await store.invitationPassword(friend,slot,action==='replace-password');
     if(!invite)return show('Die Einladung ist nicht mehr offen.',404);
-    return invite.token?show('',200,{invite}):show('Das bisherige Passwort kann nur ersetzt werden.',200,{replaceInvite:{friend,slot}});
+    return invite.token?show('',200,{invite}):show('Das bisherige Passwort kann nur ersetzt werden.');
   }
   return await store.revoke(friend,slot)?show():missing();
 }
