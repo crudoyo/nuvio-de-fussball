@@ -21,12 +21,13 @@ import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,automaticDaddyEventStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
+import {withWidePlayerRelay} from './daddy-wide.js';
 import {leagueSimulcasts,simulcastArtwork,SIMULCAST_LEAGUES} from './league-simulcast.js';
 import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
 export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
-export const VERSION = '0.6.3';
+export const VERSION = '0.6.4';
 const API = 'https://api.openligadb.de';
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
@@ -540,6 +541,7 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
   }catch(err){return json({error:'Anfrage fehlgeschlagen',...(privateMode?{}:{detail:String(err.message||err).slice(0,130)})},400,20);}
 }
 export async function handle(request,env={},fetcher=fetch) {
+  fetcher=withWidePlayerRelay(fetcher,env.DADDY_WIDE_RELAY);
   if(privateAccessEnabled(env))return handlePrivateAccess(request,env,route=>handleAddon(request,env,fetcher,route));
   return handleAddon(request,env,fetcher);
 }

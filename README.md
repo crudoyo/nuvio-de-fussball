@@ -1,6 +1,6 @@
 # SoccerDE für Nuvio (Cloudflare Workers)
 
-**Version 0.6.3 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
+**Version 0.6.4 · Community-Prototyp**. Eigenständiges [Stremio-Addon](https://stremio.github.io/stremio-addon-sdk/protocol.html) für Nuvio. Deutsche Spielpläne und Champions League stammen von [OpenLigaDB](https://openligadb.de/) (ODbL); Europa League und Conference League werden über den öffentlich zugänglichen ESPN-Spielplan ergänzt.
 
 ## Funktionen
 
@@ -285,3 +285,7 @@ Katalogvorschau und Detailansicht zeigen den aktuellen Saisonstand. Für 1. Bund
 Wenn die Tabelle fehlt, zählt der Worker Siege und Niederlagen aus den abgeschlossenen Spielen des Saisonspielplans. Unentschieden fließen in keine der beiden Zahlen ein. Zukunftsspiele, doppelte Begegnungen und Spiele ohne Endstand werden übersprungen. In der Europa League und Conference League deckt der verwendete ESPN-Spielplan nur einen Teil der Saison ab. Dort entfällt die Bilanz.
 
 Tabellenabfragen laufen parallel zum Spielplan, werden zehn Minuten zwischengespeichert und dürfen höchstens 1,5 Sekunden Netzwerkzeit benötigen. Bild- und Streamanfragen laden keine Tabellenstatistiken. Der Produktions-Smoke-Test prüft die Saisonbilanz im Katalog und in der Detailantwort.
+
+## WideIPTV-Abrufdienst
+
+Falls WideIPTV die Playerseiten vom Worker aus mit HTTP 403 beantwortet, kann `node scripts/daddy-wide-relay.mjs` die zwei HTML-Seiten von einem erreichbaren Rechner abrufen. Der Dienst lauscht auf `127.0.0.1:18797` und verlangt `DADDY_WIDE_RELAY_TOKEN` (32 Zufallsbytes als Base64url). Stelle den Dienst über einen HTTPS-Tunnel bereit und hinterlege im Worker-Secret `DADDY_WIDE_RELAY` ein JSON-Objekt mit `origin` (HTTPS-Ursprung des Tunnels) und `token` (derselbe Wert). Playlists und Videosegmente lädt der Worker direkt vom Medienserver. Für den Dauerbetrieb brauchen Dienst und Tunnel einen Rechner, der eingeschaltet bleibt.

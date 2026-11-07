@@ -3,11 +3,11 @@
  */
 import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyRequestContext,withDaddyFallback,withDaddyAbort} from './daddy-domains.js';
 import {readBounded,decodeDaddyMedia,isMp4,mediaRange} from './daddy-media.js';
+import {WIDE_PLAYER,widePlayerPage} from './daddy-wide.js';
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const VARIANTS=new Set(['stream','cast','watch','plus','casting','player','hub']);
 const EDGE='https://edge.wedd48c.top';
-const WIDE_PLAYER='https://wideiptv.top',WIDE_CDN='https://cdn.wideiptv.top';
-const WIDE_SLUG=/^[A-Za-z0-9_-]{1,80}$/;
+const WIDE_CDN='https://cdn.wideiptv.top';
 const SEGMENT_HOSTS=new Set(['p16-common-sign.tiktokcdn-us.com','p19-common-sign.tiktokcdn-us.com']);
 const stores=new WeakMap(),encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const error=(code,status=502)=>Object.assign(new Error(code),{status});
@@ -23,8 +23,7 @@ export function adapterPlayerUrl(raw,channelId,base){
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)return null;
     if(u.hostname==='dembed.st'&&u.pathname==='/premiumtv/daddy.php'&&u.searchParams.get('id')===String(channelId))return u.href;
     if(u.hostname==='assetrage.net'&&/^\/(?:embed|player|e)\//.test(u.pathname))return u.href;
-    if(u.origin===WIDE_PLAYER&&u.pathname==='/daddy.php'&&[...u.searchParams].length===1&&
-      WIDE_SLUG.test(u.searchParams.get('stream')||''))return u.href;
+    if(u.pathname==='/daddy.php'&&widePlayerPage(u))return u.href;
   }catch{}return null;
 }
 /** Data decoding only, based on the reference player's four-part configuration. */
@@ -54,10 +53,12 @@ function mediaUrl(raw,profile,channelId,kind='media',base){
     if(profile==='assetrage'&&/^[a-z0-9-]+\.7odxv0l067ka\.net$/.test(u.hostname)&&
       (!u.port||u.port==='8443')&&u.pathname.startsWith('/hls/')&&
       (kind==='playlist'?u.pathname.endsWith('.m3u8'):/\.(?:ts|m4s|mp4)$/.test(u.pathname)))return u.href;
-    if(profile==='wideiptv'&&u.origin===WIDE_CDN&&
-      /^\/[A-Za-z0-9_-]+\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:m3u8|ts|m4s|mp4)$/.test(u.pathname)&&
-      (!base||u.pathname.split('/')[1]===new URL(base).pathname.split('/')[1])&&
-      (kind==='playlist'?u.pathname.endsWith('.m3u8'):!u.pathname.endsWith('.m3u8')))return u.href;
+    if(profile==='wideiptv'&&u.origin===WIDE_CDN){
+      u.pathname=u.pathname.replace(/\/{2,}/g,'/');
+      if(/^\/[A-Za-z0-9_-]+\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:m3u8|ts|m4s|mp4)$/.test(u.pathname)&&
+        (!base||u.pathname.split('/')[1]===new URL(base).pathname.split('/')[1])&&
+        (kind==='playlist'?u.pathname.endsWith('.m3u8'):!u.pathname.endsWith('.m3u8')))return u.href;
+    }
   }catch{}return null;
 }
 export function daddyPlayerConfig(html,pageUrl,channelId){
