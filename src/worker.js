@@ -26,7 +26,7 @@ import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,sele
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
 export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
-export const VERSION = '0.6.2';
+export const VERSION = '0.6.3';
 const API = 'https://api.openligadb.de';
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.

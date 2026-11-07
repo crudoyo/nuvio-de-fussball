@@ -97,6 +97,20 @@ test('refuses denied access and unsafe redirects without forwarding credentials'
     assert(!JSON.stringify(result).includes('private'));
   }
 });
+test('a denied WideIPTV frame does not hide another player offered for the same channel',async()=>{
+  const site='https://thedaddy.li',id='426';
+  const wide='https://wideiptv.top/daddy.php?stream=Conference';
+  const player=site+'/player/stream-'+id+'.php',cast=site+'/cast/stream-'+id+'.php';
+  const options={
+    [site+'/stream/stream-'+id+'.php']:()=>new Response(`<button data-url="${cast}">Cast</button><button data-url="${player}">Player</button>`),
+    [player]:()=>new Response(`<iframe id="thatframe" src="${wide}"></iframe>`),
+    [wide]:()=>new Response('',{status:403}),
+    [cast]:()=>new Response('const SRC="'+media+'";')
+  };
+  const result=await resolveDaddyChannel(id,network(options));
+  assert.equal(result.status,'resolved');
+  assert.equal(result.stream.url,media);
+});
 test('ignores optional cookies but never sends them or works around denied media access',async()=>{
   const base=network({'https://thedaddy.li/stream/stream-426.php':()=>new Response('const SRC="'+media+'";',
     {headers:{'set-cookie':'tracking=private'}})});

@@ -131,6 +131,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
   if(!start)return {status:'invalid_channel',stream:null};
   const context=daddyRequestContext({signal,timeout,takeRequest});context.channelId=String(channelId).trim();
   const queue=[{url:start,referer:new URL(start).origin+'/',entry:true}],seen=new Set();let status='no_public_media';
+  let deniedAlternative=false;
   const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
   try{
     for(let count=0;queue.length&&count<8;){
@@ -147,6 +148,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
         response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,context,false,true);
       }catch(error){
         if(!page.optional||!['upstream_http_error','access_denied','redirect_not_supported'].includes(error.message))throw error;
+        if(error.message==='access_denied')deniedAlternative=true;
         continue;
       }
       page.url=response.url;
@@ -179,7 +181,11 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       // The provider identifies its content iframe explicitly. Ignore ad frames.
       for(const tag of html.matchAll(/<iframe\b[^>]*>/gi)){
         const a=attributes(tag[0]);if(!['thatframe','playerFrame'].includes(a.id))continue;
-        const url=player(a.src,page.url);if(url&&!seen.has(url)&&queue.length<12){checks.contentFrames++;queue.unshift({url,referer:page.url});}
+        const url=player(a.src,page.url);
+        if(url&&!seen.has(url)&&queue.length<12){
+          checks.contentFrames++;
+          queue.unshift({url,referer:page.url,optional:page.optional});
+        }
       }
       // Only offered same-channel alternatives; never manufacture media addresses.
       for(const tag of html.matchAll(/<(?:button|a)\b[^>]*\bdata-url\s*=[^>]*>/gi)){
@@ -195,7 +201,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       // Read its offered buttons too; the legacy stream page may omit them.
       if(page.entry)queue.push({url:new URL('/watch.php?id='+String(channelId).trim(),page.url).href,referer:page.url,optional:true});
     }
-    return {status,stream:null,checks};
+    return {status:deniedAlternative?'access_denied':status,stream:null,checks};
   }catch(error){
     if(signal?.aborted)throw signal.reason;
     checks.failure=/too many subrequests/i.test(error.message)?'worker_subrequest_limit':String(error.name||'Error').replace(/[^a-zA-Z]/g,'').slice(0,30);
