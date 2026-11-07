@@ -5,7 +5,7 @@ Im privaten Modus dient der Worker nur dem eingeladenen Freundeskreis. Unter **`
 ## Freunde und Geräte verwalten
 
 1. Unter **Einladung bereitstellen** Name, Schlüssellimit und Gültigkeit eintragen. Standard sind zwei Schlüssel und 72 Stunden Gültigkeit. Mit **Immer** bleibt die Einladung bis zum Einlösen oder Zurückziehen gültig.
-2. **Einladung kopieren** und die gemeinsame Adresse `/configure` mit dem persönlichen Einmalpasswort privat weitergeben. Das Passwort wird nur beim Erstellen angezeigt und reserviert einen Schlüsselplatz.
+2. **Einladung kopieren** und die gemeinsame Adresse `/configure` mit dem persönlichen Passwort privat weitergeben. Das Passwort wird nur beim Erstellen angezeigt und reserviert einen Schlüsselplatz.
 3. Der Freund meldet sich mit dem Passwort an. Es ist sofort verbraucht. Im selben Browser bleiben 30 Minuten, um die Kataloge auszuwählen und den Importlink zu erstellen. Bei Abbruch wird der Platz nach 30 Minuten wieder frei. Dafür ist ein neues Passwort nötig. Bereits ausgegebene `/e/…`-Links können wie bisher eingelöst werden.
 4. Für den TV **URL kopieren** wählen und die HTTPS-Adresse dort unter Add-ons importieren. Die App-Knöpfe installieren auf dem aktuell verwendeten Gerät. Nuvio, Stremio und der manuelle Import verwenden denselben Geräteschlüssel. Eine Änderung über **Auswahl bearbeiten** behält den Schlüssel und erzeugt eine URL für die geänderte Auswahl.
 5. Für einen zweiten Schlüssel **Weitere Einladung** wählen. Offene Einladungen reservieren Plätze. Nach Ablauf oder Rücknahme ist der Platz wieder frei. Ein aktiver Schlüssel kann einzeln gesperrt werden. Die Sperre eines Freundes pausiert alle seine Schlüssel und Einladungen, ohne individuell widerrufene Schlüssel wiederherzustellen.

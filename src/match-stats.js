@@ -32,42 +32,42 @@ export function createStatsContext(games,table=[],now=Date.now()){
   const history=games.flatMap(game=>{
     const at=startTime(game),score=resultOfType(game);
     if(game.matchIsFinished!==true||!at||+at>now||!score||seen.has(game.matchID))return [];
-    seen.add(game.matchID);return [{game,score,at:+at}];
-  }).sort((a,b)=>b.at-a.at||b.game.matchID-a.game.matchID);
+    seen.add(game.matchID);return [{game,score}];
+  });
   const cache=new Map();
   return team=>{
     const key=teamId(team)?'id:'+teamId(team):'name:'+nameKey(team?.teamName);
     if(cache.has(key))return cache.get(key);
     const entry=standings.find(row=>sameTeam(team,row.team));
-    const form=[];
-    for(const {game,score} of history){
-      const home=sameTeam(team,game.team1),away=sameTeam(team,game.team2);
-      if(home===away)continue;
-      const scored=home?score.pointsTeam1:score.pointsTeam2;
-      const conceded=home?score.pointsTeam2:score.pointsTeam1;
-      form.push(scored>conceded?'S':scored===conceded?'U':'N');
-      if(form.length===5)break;
+    let record=null;
+    if(entry&&nonnegative(entry.team.won)&&nonnegative(entry.team.lost)&&entry.team.won+entry.team.lost<=entry.team.matches){
+      record={wins:entry.team.won,losses:entry.team.lost};
+    }else{
+      for(const {game,score} of history){
+        const home=sameTeam(team,game.team1),away=sameTeam(team,game.team2);
+        if(home===away)continue;
+        const scored=home?score.pointsTeam1:score.pointsTeam2;
+        const conceded=home?score.pointsTeam2:score.pointsTeam1;
+        record??={wins:0,losses:0};
+        if(scored>conceded)record.wins++;
+        if(scored<conceded)record.losses++;
+      }
     }
     const result={standing:entry?{rank:entry.rank,points:entry.team.points,
-      goals:entry.team.goals,against:entry.team.opponentGoals}:null,form:form.reverse()};
+      goals:entry.team.goals,against:entry.team.opponentGoals}:null,record};
     cache.set(key,result);return result;
   };
 }
 
 export function statisticsLines(match,context){
   if(!context)return [];
-  let hasTable=false,hasForm=false;
   const lines=[match.team1,match.team2].flatMap(team=>{
     if(!team?.teamName)return [];
-    const {standing,form}=context(team),parts=[];
-    if(standing){
-      hasTable=true;
-      parts.push(`Platz ${standing.rank}`,`${standing.points} Punkte`,`Tore ${standing.goals}:${standing.against}`);
-    }
-    if(form.length){hasForm=true;parts.push(`Form (${form.length}): ${form.join('–')}`);}
+    const {standing,record}=context(team),parts=[];
+    if(standing)parts.push(`Platz ${standing.rank}`,`${standing.points} Punkte`);
+    if(record)parts.push(`Siege/Niederlagen ${record.wins}:${record.losses}`);
+    if(standing)parts.push(`Tore ${standing.goals}:${standing.against}`);
     return parts.length?[team.teamName+': '+parts.join(' · ')+'.']:[];
   });
-  if(!lines.length)return [];
-  return [hasTable?'Aktueller Saisonstand:':'Form in diesem Wettbewerb:',...lines,
-    ...(hasForm?['Form: S = Sieg, U = Unentschieden, N = Niederlage; ältestes Spiel zuerst.']:[])];
+  return lines.length?['Saisonstand:',...lines]:[];
 }

@@ -95,7 +95,8 @@ try{
   }
   const configure='/configure',configurationLogin=configure+'/login';
   const gate=await expect(await request(configure),200,'Shared configuration address');
-  assert.match(gate,/Einmalpasswort/);
+  assert.match(gate,/<h1>SoccerDE<\/h1>/);
+  assert.match(gate,/<label>Passwort<input/);
   assert.doesNotMatch(gate,/name="catalog"/);
   await expect(await request(configure,{body:{catalog:'defootball_bl1'}}),403,'Anonymous configuration submission');
   await expect(await request(configurationLogin,{body:{code:expiredCode}}),403,'Expired session never makes a used password reusable');
@@ -154,7 +155,7 @@ try{
   const [install]=await Promise.all(simultaneous.sort((a,b)=>a.status-b.status).map(r=>r.text()));
   const tvImport=field(install,'manifest-url');
   assert(tvImport?.includes('/a/')&&tvImport.endsWith('/manifest.json'),'Protected import URL');
-  assert(install.includes('Auf einem anderen Gerät installieren'),'Import instructions cover another device');
+  assert(install.includes('auch für andere Geräte'),'Import label covers another device');
   for(const app of ['nuvio','stremio'])assert.equal(href(install,'install-'+app),tvImport.replace('http:',app+':'),'App link preserves full private path');
   const manifest=JSON.parse(await expect(await request(tvImport,{client:tv}),200,'Import on TV after phone activation'));
   await expect(await request(tvImport,{client:tv}),200,'Installed TV can fetch the manifest again');

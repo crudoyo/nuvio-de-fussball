@@ -3,7 +3,7 @@
  * Data: OpenLigaDB (ODbL). Streams: optional user-configured Stremio sports addons.
  * No direct scraping, DRM circumvention, torrent/P2P support or stream fabrication.
  */
-import { espnScoreboardUrl, normalizeEspnEvents } from './international.js';
+import { espnScoreboardUrl, normalizeEspnEvents, UEFA_ESPN_CODES } from './international.js';
 import {startTime,matchdayNumber,matchdayLabel,weekdayLabel,hasCalendarCatalogs,
   CALENDAR_VIEWS,selectCalendarView} from './matchdays.js';
 import {standingsUrl,resultOfType,createStatsContext,statisticsLines} from './match-stats.js';
@@ -21,7 +21,7 @@ import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
-import {MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
+import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
 export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
@@ -59,7 +59,7 @@ function html(body, status = 200) { return new Response(body, {status,headers:{'
 
 function catalogId(shortcut) { return `defootball_${shortcut.toLowerCase().replace(/[^a-z0-9_-]/g,'')}`; }
 function leagueCatalogs(league){
-  const base={type:'tv',id:catalogId(league.shortcut),name:`⚽ ${league.name}`};
+  const base={type:'tv',id:catalogId(league.shortcut),name:league.name};
   return hasCalendarCatalogs(league.shortcut)?CALENDAR_VIEWS.map(view=>({
     ...base,id:base.id+view.suffix,name:base.name+' · '+view.label
   })):[base];
@@ -155,6 +155,10 @@ async function standings(league,env,fetcher){
     }));
   }catch{return [];}
 }
+function seasonStatistics(league,games,table){
+  // The ESPN scoreboard feed only covers a short window of the season.
+  return createStatsContext(Object.hasOwn(UEFA_ESPN_CODES,league.shortcut)?[]:games,table);
+}
 const dateLabel = m => { const d=startTime(m); return d ? new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d)+' Uhr' : 'Termin offen'; };
 export function selectUpcoming(items, now=Date.now()) {
   return items.filter(m=>{const t=+startTime(m);return t && t>now-86400_000 && t<now+30*86400_000;})
@@ -200,7 +204,7 @@ function meta(m,league,origin,prefix='',statistics=null) {
     behaviorHints:{defaultVideoId:id}};
 }
 function manifest(list,settings={}) {
-  return {id:'com.community.nuvio.defootball',version:VERSION,name:'Deutscher Fußball · Spielpläne',description:'Deutsche Fußballligen als einzelne Spielkataloge. OpenLigaDB + optionale Quellen aus bereits vorhandenen Sport-Add-ons.',types:['tv'],resources:[{name:'catalog',types:['tv']},{name:'meta',types:['tv'],idPrefixes:['defootball_']},{name:'stream',types:['tv'],idPrefixes:['defootball_']}],catalogs:selectedCatalogs(list.flatMap(leagueCatalogs),settings),behaviorHints:{configurable:true}};
+  return {id:'com.community.nuvio.defootball',version:VERSION,name:ADDON_NAME,description:'Spielpläne deutscher Ligen und europäischer Wettbewerbe.',types:['tv'],resources:[{name:'catalog',types:['tv']},{name:'meta',types:['tv'],idPrefixes:['defootball_']},{name:'stream',types:['tv'],idPrefixes:['defootball_']}],catalogs:selectedCatalogs(list.flatMap(leagueCatalogs),settings),behaviorHints:{configurable:true}};
 }
 const simplify=s=>clean(s).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
 const aliases=[[/\brot weiss essen\b|\brw essen\b|\brwe\b/g,'essen'],[/\bbayern munchen\b|\bbayern munich\b/g,'bayern'],[/\bborussia dortmund\b|\bbvb\b/g,'dortmund'],[/\bborussia monchengladbach\b|\bgladbach\b/g,'monchengladbach'],[/\bkoln\b|\bcologne\b/g,'koln'],[/\bfortuna dusseldorf\b/g,'dusseldorf'],[/\brb leipzig\b/g,'leipzig'],[/\bwerder bremen\b/g,'bremen']];
@@ -342,7 +346,7 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
       }
       const authorizedPrefix=invite?await invite.activate():accessPrefix;
       if(invite&&!authorizedPrefix)return html('<!doctype html><meta charset="utf-8"><p>Einladung nicht mehr verfügbar.</p>',410);
-      return html(installationPage({version:VERSION,url:origin+authorizedPrefix+configPrefix+'/manifest.json',settings,catalogs,browserAllowed,privateMode}));
+      return html(installationPage({version:VERSION,url:origin+authorizedPrefix+configPrefix+'/manifest.json',privateMode}));
     }
     let pathname=url.pathname,prefix=accessPrefix,sources=safeUrls((env.UPSTREAM_MANIFESTS||'').split(',')),settings={m:[]};
     const match=pathname.match(new RegExp('^/u/([A-Za-z0-9_-]{1,'+MAX_CONFIG_LENGTH+'})(/.*)$'));
@@ -435,7 +439,7 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
         fixtures(found.league,env,fetcher),standings(found.league,env,fetcher)
       ]);
       const selected=found.view==='upcoming'?selectUpcoming(games):selectCalendarView(games,found.view);
-      const statistics=createStatsContext(games,table);
+      const statistics=seasonStatistics(found.league,games,table);
       return json({metas:selected.map(m=>meta(m,found.league,origin,prefix,statistics))},200,120);
     }
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
@@ -444,7 +448,7 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
       const [games,table]=await Promise.all([fixtures(found.league,env,fetcher),
         details[1]==='meta'?standings(found.league,env,fetcher):Promise.resolve([])]);
       const game=games.find(x=>String(x.matchID)===found.mid);if(!game)return json({error:'Spiel nicht gefunden'},404);
-      if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,createStatsContext(games,table))});
+      if(details[1]==='meta')return json({meta:meta(game,found.league,origin,prefix,seasonStatistics(found.league,games,table))});
       const nativeStatuses=[];
       const streams=await resolveStreams(game,sources,fetcher,env,request.signal,{playbackOrigin:origin+accessPrefix,
         onNativeDiagnostic:(channel,result)=>nativeStatuses.push(channel+':'+result.status+

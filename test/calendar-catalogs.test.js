@@ -85,6 +85,9 @@ test('two five-row league blocks lead the catalog; every row preserves playable 
   const prefix='/u/'+encodeConfig(['https://sports.example/manifest.json']);
   const get=async path=>(await handle(new Request('https://addon.test'+path),{SEASON:'2026'},fetcher)).json();
   const manifest=await get(prefix+'/manifest.json');
+  assert.equal(manifest.name,'SoccerDE');
+  assert.equal(manifest.id,'com.community.nuvio.defootball');
+  assert(manifest.catalogs.every(c=>!c.name.includes('⚽')));
   const suffixes=['','_friday','_saturday','_sunday','_following'];
   const labels=['Aktuelle Woche (Mo–So)','Freitag','Samstag','Sonntag','Kommende Woche (Mo–So)'];
   const expectedIds=['bl1','bl3'].flatMap(league=>suffixes.map(suffix=>`defootball_${league}${suffix}`));
@@ -110,8 +113,8 @@ test('two five-row league blocks lead the catalog; every row preserves playable 
     const svg=await handle(new Request('https://addon.test'+prefix+`/poster/${league}/3.svg`),{SEASON:'2026'},fetcher);
     assert.match(await svg.text(),/Freitag/);
   }
-  assert.deepEqual(manifest.catalogs.filter(c=>c.id.startsWith('defootball_bl2')).map(c=>c.name),['⚽ 2. Bundesliga']);
-  assert.deepEqual(manifest.catalogs.filter(c=>c.id.startsWith('defootball_ucl')).map(c=>c.name),['⚽ Champions League']);
+  assert.deepEqual(manifest.catalogs.filter(c=>c.id.startsWith('defootball_bl2')).map(c=>c.name),['2. Bundesliga']);
+  assert.deepEqual(manifest.catalogs.filter(c=>c.id.startsWith('defootball_ucl')).map(c=>c.name),['Champions League']);
   const other=await get('/catalog/tv/defootball_bl2.json');
   assert.deepEqual(other.metas.map(m=>Number(m.id.split('_').at(-1))),[3,4,5,11,12,13,14,20]);
   assert(!other.metas[0].matchday);

@@ -106,7 +106,7 @@ async function handleConfigure(request,url,store,addon){
     try{code=(await readSettingsForm(request)).get('code')?.trim()||'';}
     catch{return html(configurationLogin('Ungültiges Formular.'),400);}
     const session=invitationCodePattern.test(code)?await store.startSetup(code):null;
-    if(!session)return html(configurationLogin('Einmalpasswort ungültig oder bereits verwendet.'),403);
+    if(!session)return html(configurationLogin('Passwort ungültig oder bereits verwendet.'),403);
     return redirectWithCookie('/configure',cookie(SETUP_COOKIE,session,'/configure',SETUP_SESSION_SECONDS));
   }
   if(url.pathname!=='/configure'||!['GET','POST'].includes(request.method))return missing();

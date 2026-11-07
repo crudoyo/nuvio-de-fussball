@@ -25,7 +25,8 @@ const configure=await get('/configure');
 assert.equal(configure.status,200);
 assert.match(configure.headers.get('cache-control')||'',/no-store/);
 const loginPage=await configure.text();
-assert.match(loginPage,/Einmalpasswort/);
+assert.match(loginPage,/<h1>SoccerDE<\/h1>/);
+assert.match(loginPage,/<label>Passwort<input/);
 assert.doesNotMatch(loginPage,/name="catalog"/);
 for(const path of ['/','/manifest.json','/u/'+encodeSettings({m:[]})+'/manifest.json',
   '/catalog/tv/defootball_bl1.json','/stream/tv/defootball_bl1_42.json','/poster/bl1/42.png',

@@ -7,8 +7,8 @@ Die Konfiguration wird vom bestehenden Worker unter `/configure` ausgeliefert. E
 ## Benutzung
 
 1. Wettbewerbe oder einzelne Kataloge auswählen. Für 1. Bundesliga und 3. Liga können die Wochen- und Tagesreihen getrennt gewählt werden. Die Suche hilft beim Finden; zum Sortieren die Suche leeren und die Pfeile an den ausgewählten Reihen verwenden.
-2. Optional Browser-Ersatzoptionen ausschalten und bis zu acht zusätzliche HTTPS-Manifest-URLs eintragen, eine pro Zeile. DaddyLive und die eingebauten öffentlichen Anbieter bleiben automatisch angebunden. Ein zusätzlicher Anbieter wird erst beim Öffnen eines Spiels abgefragt.
-3. **Installationslinks erstellen** wählen. **In Nuvio installieren**, **In Stremio installieren** und die kopierbare HTTPS-URL übernehmen exakt dieselben Einstellungen.
+2. Optional **Browser-Links anzeigen** abwählen und bis zu acht zusätzliche HTTPS-Manifest-URLs eintragen, eine pro Zeile. DaddyLive und die eingebauten öffentlichen Anbieter bleiben automatisch angebunden. Ein zusätzlicher Anbieter wird erst beim Öffnen eines Spiels abgefragt.
+3. **Importlink erstellen** wählen. **In Nuvio installieren**, **In Stremio installieren** und die kopierbare HTTPS-URL übernehmen exakt dieselben Einstellungen.
 4. Falls das Betriebssystem oder die App nachfragt, die Installation dort bestätigen. Falls ein Browser keine App-Links öffnet, die HTTPS-URL in der App unter Add-ons importieren.
 5. **Auswahl bearbeiten** öffnet den persönlichen Konfigurationslink. Änderungen erzeugen eine neue URL; eine vorhandene Installation ändert sich dadurch nicht automatisch. Den neuen Link installieren bzw. die bisherige Installation ersetzen.
 

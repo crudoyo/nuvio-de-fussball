@@ -68,12 +68,11 @@ for(const league of ['bl1','bl3']){
   if(current.length){
     const sample=current[0],detail=(await json('/meta/tv/'+sample.id+'.json?release='+version)).meta;
     for(const preview of [sample,detail]){
-      if(!preview?.description||!/Aktueller Saisonstand:|Form in diesem Wettbewerb:/.test(preview.description)||
-        /Videostreams nur/.test(preview.description))throw new Error('Missing match statistics in '+league);
+      if(!preview?.description||!/Siege\/Niederlagen \d+:\d+/.test(preview.description)||
+        /Form \(|Videostreams nur/.test(preview.description))throw new Error('Incorrect season statistics in '+league);
     }
     console.log(JSON.stringify({league,statisticsInCatalogAndDetail:true,
-      tableAvailable:sample.description.includes('Aktueller Saisonstand:'),
-      recentFormAvailable:sample.description.includes('Form (')}));
+      tableAvailable:sample.description.includes(' Punkte · '),seasonRecordAvailable:true}));
   }
 }
 // Validate the real Cloudflare -> logo CDN -> PNG embedding path, not only GitHub's network.

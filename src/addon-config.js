@@ -1,3 +1,5 @@
+export const ADDON_NAME='SoccerDE';
+
 /** Portable, per-install settings. Existing {m:[...]} URLs remain compatible. */
 export const MAX_CONFIG_LENGTH=12000;
 const MAX_SOURCES=8,MAX_CATALOGS=256;
