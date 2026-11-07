@@ -3,19 +3,46 @@
   "name": "nuvio-de-fussball",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
   "vars": {
+    "PRIVATE_ACCESS": "true",
     "SEASON": "2026",
     "DADDY_WEB_PLAYERS": "true",
     "NATIVE_ONLY": "false",
     "NATIVE_VERIFY_MANIFESTS": "true",
     "DADDY_NATIVE_RESOLVE": "true"
   },
+  "d1_databases": [{
+    "binding": "PRIVATE_DB",
+    "database_name": "nuvio-de-fussball-access",
+    "database_id": "e1b7c966-0c16-4b03-a151-e51400b6747d",
+    "migrations_dir": "migrations/private"
+  }],
+  "secrets": { "required": ["PRIVATE_ADMIN_KEY"] },
   "rules": [
     {
       "type": "Data",
       "globs": [
         "**/*.woff2"
-      ]
+      ],
+      "fallthrough": true
     }
-  ]
+  ],
+  "env": {
+    "public": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "d1_databases": [],
+      "secrets": { "required": [] },
+      "vars": {
+        "PRIVATE_ACCESS": "false",
+        "SEASON": "2026",
+        "DADDY_WEB_PLAYERS": "true",
+        "NATIVE_ONLY": "false",
+        "NATIVE_VERIFY_MANIFESTS": "true",
+        "DADDY_NATIVE_RESOLVE": "true"
+      }
+    }
+  }
 }

@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {VERSION} from '../src/worker.js';
 import {checkConfiguration} from './check-configuration.mjs';
 const port=8791;
-const child=spawn(process.execPath,['node_modules/wrangler/bin/wrangler.js','dev','--local','--ip','127.0.0.1',
+const child=spawn(process.execPath,['node_modules/wrangler/bin/wrangler.js','dev','--env','public','--local','--ip','127.0.0.1',
   '--port',String(port),'--log-level','error','--show-interactive-dev-session','false'],{
   cwd:new URL('../',import.meta.url),stdio:['ignore','pipe','pipe'],windowsHide:true
 });

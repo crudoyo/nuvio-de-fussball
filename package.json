@@ -9,7 +9,7 @@
     "test:private": "node scripts/check-private-worker.mjs",
     "check:crests": "node scripts/check-3liga-logos.mjs",
     "check:ucl-crests": "node scripts/check-ucl-logos.mjs",
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --env public",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

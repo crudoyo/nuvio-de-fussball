@@ -34,11 +34,11 @@ Dann `http://127.0.0.1:8787/admin` öffnen. Lokale Importlinks sind für den HTT
 
 ## Live schalten
 
-Die mitgelieferte `wrangler.private.jsonc` ist eine lokale Testkonfiguration. Für den bestehenden Live-Worker in Cloudflare eine D1-Datenbank anlegen. Die Bindung `PRIVATE_DB` mit der echten Datenbank-ID, `migrations_dir: "migrations/private"` und `PRIVATE_ACCESS: "true"` müssen in die **tatsächlich vom Produktionsbuild verwendete** Wrangler-Konfiguration. Den vorhandenen Worker-Namen beibehalten und Vorschau-URLs deaktivieren oder ebenfalls absichern.
+Der Live-Worker `nuvio-de-fussball` nutzt `wrangler.jsonc` mit der D1-Datenbank `nuvio-de-fussball-access`. `wrangler.private.jsonc` dient lokalen Tests mit Zugangsschutz. `npm run dev` verwendet die separate lokale Umgebung ohne Passwortschutz.
 
 1. Migration auf die richtige Datenbank anwenden: `npx wrangler d1 migrations apply PRIVATE_DB --remote`.
-2. Einen eigenen zufälligen 32-Byte-Schlüssel erzeugen und als Cloudflare Secret `PRIVATE_ADMIN_KEY` hinterlegen, zum Beispiel mit `npx wrangler secret put PRIVATE_ADMIN_KEY`. Die Datenbank-ID ist keine Anmeldeinformation; der Schlüssel bleibt außerhalb von Git.
-3. In GitHub Actions die Repository-Variable `WORKER_SMOKE_MODE` auf `private` setzen. Dann die vorbereitete Version über den bestehenden Worker-Build bereitstellen. Private Bindung, Secret und Modus bei künftigen Releases beibehalten. Ein Rollback auf eine Version **vor** dem Einladungsmodus würde dessen Schutz entfernen.
+2. Bei der ersten Einrichtung einen zufälligen 32-Byte-Schlüssel als Cloudflare Secret `PRIVATE_ADMIN_KEY` hinterlegen. Der Schlüssel bleibt außerhalb von Git. Das Secret ist für Deployments verpflichtend.
+3. Die Version über den bestehenden Worker-Build bereitstellen. GitHub Actions prüft den privaten Live-Worker nach dem Push auf `main`. Ein Rollback auf eine Version vor dem Einladungsmodus würde den Zugangsschutz entfernen.
 4. Über HTTPS `/admin` anmelden und eine Einladung erstellen. `/configure` zeigt ohne Sitzung nur das Passwortformular. `/manifest.json`, alte öffentliche `/u/…`-Links und `/daddy/…` müssen ohne Schlüssel 404 liefern. Bestehende öffentliche Installationen durch persönliche Links ersetzen. Einen App- und HLS-Test am Zielgerät machen.
 
 Die Authentifizierung läuft vor Cache und Quellenabrufen. D1 speichert nur die Hashes der Einladungen, Konfigurationssitzungen und Geräteschlüssel. Die bedingten SQL-Schreibzugriffe verhindern die doppelte Anmeldung und halten das Schlüssellimit auch bei parallelen Anfragen ein. Admins erhalten ein signiertes, acht Stunden gültiges Cookie. Private Antworten tragen `no-store`. HTML-Seiten senden Referer nur an denselben Host, damit ihre Formulare den für den CSRF-Schutz geprüften Origin behalten. Keine vollständigen URLs mit Schlüsseln in externe Logs übernehmen. Eigene HLS-Playlists und Segmente bleiben unter demselben Schlüsselpfad und prüfen Sperren vor dem Abruf.
