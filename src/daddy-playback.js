@@ -6,6 +6,8 @@ import {readBounded,decodeDaddyMedia,isMp4,mediaRange} from './daddy-media.js';
 const AGENT='Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const VARIANTS=new Set(['stream','cast','watch','plus','casting','player','hub']);
 const EDGE='https://edge.wedd48c.top';
+const WIDE_PLAYER='https://wideiptv.top',WIDE_CDN='https://cdn.wideiptv.top';
+const WIDE_SLUG=/^[A-Za-z0-9_-]{1,80}$/;
 const SEGMENT_HOSTS=new Set(['p16-common-sign.tiktokcdn-us.com','p19-common-sign.tiktokcdn-us.com']);
 const stores=new WeakMap(),encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const error=(code,status=502)=>Object.assign(new Error(code),{status});
@@ -21,6 +23,8 @@ export function adapterPlayerUrl(raw,channelId,base){
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)return null;
     if(u.hostname==='dembed.st'&&u.pathname==='/premiumtv/daddy.php'&&u.searchParams.get('id')===String(channelId))return u.href;
     if(u.hostname==='assetrage.net'&&/^\/(?:embed|player|e)\//.test(u.pathname))return u.href;
+    if(u.origin===WIDE_PLAYER&&u.pathname==='/daddy.php'&&[...u.searchParams].length===1&&
+      WIDE_SLUG.test(u.searchParams.get('stream')||''))return u.href;
   }catch{}return null;
 }
 /** Data decoding only, based on the reference player's four-part configuration. */
@@ -50,10 +54,15 @@ function mediaUrl(raw,profile,channelId,kind='media',base){
     if(profile==='assetrage'&&/^[a-z0-9-]+\.7odxv0l067ka\.net$/.test(u.hostname)&&
       (!u.port||u.port==='8443')&&u.pathname.startsWith('/hls/')&&
       (kind==='playlist'?u.pathname.endsWith('.m3u8'):/\.(?:ts|m4s|mp4)$/.test(u.pathname)))return u.href;
+    if(profile==='wideiptv'&&u.origin===WIDE_CDN&&
+      /^\/[A-Za-z0-9_-]+\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:m3u8|ts|m4s|mp4)$/.test(u.pathname)&&
+      (!base||u.pathname.split('/')[1]===new URL(base).pathname.split('/')[1])&&
+      (kind==='playlist'?u.pathname.endsWith('.m3u8'):!u.pathname.endsWith('.m3u8')))return u.href;
   }catch{}return null;
 }
 export function daddyPlayerConfig(html,pageUrl,channelId){
   if(!validId(channelId)||!adapterPlayerUrl(pageUrl,channelId))return null;
+  if(new URL(pageUrl).origin===WIDE_PLAYER)return null;
   const profile=new URL(pageUrl).hostname==='dembed.st'?'dembed':'assetrage';
   let url;
   if(profile==='dembed'){
@@ -88,6 +97,21 @@ async function bytes(url,headers,fetcher,context,limit=262144){
   }
 }
 function headers(config){return {'User-Agent':AGENT,Referer:config.referer,Origin:new URL(config.referer).origin};}
+async function playerConfig(id,html,pageUrl,fetcher,context){
+  const page=new URL(pageUrl);
+  if(page.origin!==WIDE_PLAYER)return daddyPlayerConfig(html,pageUrl,id);
+  if(!adapterPlayerUrl(pageUrl,id))return null;
+  const slug=page.searchParams.get('stream');
+  const path='/player/'+slug;
+  const frame=[...html.matchAll(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)]
+    .map(match=>match[1]).find(src=>src===path||src===WIDE_PLAYER+path);
+  if(!frame)return null;
+  const terminal=decoder.decode(await bytes(WIDE_PLAYER+path,{'User-Agent':AGENT,Referer:pageUrl},fetcher,context,512*1024));
+  const raw=/\bstreamUrl\s*:\s*["']([^"']+)["']/.exec(terminal)?.[1];
+  const url=mediaUrl(raw,'wideiptv',id,'playlist');
+  if(!url||new URL(url).pathname!=='/'+slug+'/index.m3u8')return null;
+  return {profile:'wideiptv',url,channelId:String(id),referer:WIDE_PLAYER+'/'};
+}
 async function token(config,session,fetcher,context,force=false){
   const map=store(fetcher).tokens,key=config.channelId+':'+session;
   const old=map.get(key),now=Date.now();
@@ -125,6 +149,21 @@ async function playlist(config,url,session,fetcher,context,retry=true){
   if(/^#EXT-X-(?:SESSION-KEY|KEY):.*\bMETHOD=(?!NONE\b)/m.test(text))throw error('encrypted_playlist');
   return text;
 }
+async function checkWideMedia(config,session,fetcher,context){
+  let address=config.url;
+  for(let depth=0;depth<3;depth++){
+    const text=await playlist(config,address,session,fetcher,context);
+    const master=/^#EXT-X-STREAM-INF:/m.test(text);
+    const raw=text.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
+    const target=mediaUrl(raw,config.profile,config.channelId,master?'playlist':'media',address);
+    if(!target)throw error('unsupported_media_address');
+    if(master){address=target;continue;}
+    const sample=await bytes(target,{...headers(config),Range:'bytes=0-4095'},fetcher,context,4096);
+    if((sample[0]===0x47&&sample[188]===0x47)||isMp4(sample))return;
+    throw error('unsupported_segment_container');
+  }
+  throw error('unsupported_manifest');
+}
 async function channelConfig(id,variant,fetcher,context,origin=DADDY_PRIMARY){
   const key=id+':'+variant,map=store(fetcher).configs,old=map.get(key);
   if(old?.until>Date.now())return old.config;
@@ -148,19 +187,28 @@ async function channelConfig(id,variant,fetcher,context,origin=DADDY_PRIMARY){
     const raw=/\bsrc\s*=\s*["']([^"']+)["']/i.exec(frame[0])?.[1];
     const url=raw&&adapterPlayerUrl(raw,id,page.url);if(!url)continue;
     const html=decoder.decode(await bytes(url,{'User-Agent':AGENT,Referer:page.url},fetcher,context,4*1024*1024));
-    const config=daddyPlayerConfig(html,url,id);
+    const config=await playerConfig(id,html,url,fetcher,context);
     if(config){put(map,key,{config,until:Date.now()+30000},32);return config;}
   }
   throw error('unsupported_player_configuration');
 }
 export async function resolveDaddyAdapterPage(id,html,pageUrl,fetcher,context,{playbackOrigin,referer}={}){
-  const config=daddyPlayerConfig(html,pageUrl,id);if(!config)return null;
-  if(!playbackOrigin)return {status:'playback_origin_required',stream:null};
   const session=crypto.randomUUID(),variant=variantOf(referer,id);
+  const wide=new URL(pageUrl).origin===WIDE_PLAYER;
+  let config;
+  try{
+    config=await playerConfig(id,html,pageUrl,fetcher,context);
+    if(!config)return null;
+    if(!playbackOrigin)return {status:'playback_origin_required',stream:null};
+    if(wide)await checkWideMedia(config,session,fetcher,context);
+  }catch(e){
+    if(!wide||context.signal.aborted||e.message==='request_limit')throw e;
+    return null;
+  }
   // The stable HLS endpoint performs media I/O when selected. Listing a known
   // adapter must not lose its option to a transient preflight or shared budget.
   put(store(fetcher).configs,id+':'+variant,{config,until:Date.now()+30000},32);
-  return {status:'resolved',verification:'player_configuration',stream:{
+  return {status:'resolved',verification:wide?'entry_manifest_and_first_segment':'player_configuration',stream:{
     name:'DaddyLive HLS · Kanal '+id,
     url:new URL('daddy/live/'+id+'.m3u8?sid='+session+'&variant='+variant,playbackOrigin.replace(/\/$/,'')+'/').href,
     description:'HLS für den Nuvio-Player; Playlist-Erneuerung und Mediencontainer werden serverseitig verarbeitet.',
@@ -212,9 +260,10 @@ export async function handleDaddyPlayback(request,env={},fetcher=fetch,route={})
     const descriptor=decode(resource[3]);
     if(!Array.isArray(descriptor)||descriptor.length!==4)throw error('invalid_resource',400);
     const [target,profile,session,expiry]=descriptor;
-    if(!['dembed','assetrage'].includes(profile)||!validSession(session)||!Number.isSafeInteger(expiry)||expiry>Date.now()+600000)throw error('invalid_resource',400);
+    if(!['dembed','assetrage','wideiptv'].includes(profile)||!validSession(session)||!Number.isSafeInteger(expiry)||expiry>Date.now()+600000)throw error('invalid_resource',400);
     if(expiry<Date.now())throw error('expired_resource',410);
-    const config={channelId:resource[1],profile,referer:profile==='dembed'?'https://dembed.st/':'https://assetrage.net/'};
+    const referer={dembed:'https://dembed.st/',assetrage:'https://assetrage.net/',wideiptv:WIDE_PLAYER+'/'}[profile];
+    const config={channelId:resource[1],profile,referer};
     if(!mediaUrl(target,profile,resource[1],resource[2]))throw error('unsupported_media_address',400);
     if(resource[2]==='playlist'){
       const text=await playlist(config,target,session,fetcher,context);

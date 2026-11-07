@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {gzipSync,deflateSync} from 'node:zlib';
 import {decodeDaddyMedia,mediaRange} from '../src/daddy-media.js';
 import {decodeDaddyConfig,daddyPlayerConfig,handleDaddyPlayback,rewriteDaddyPlaylist} from '../src/daddy-playback.js';
-import {automaticDaddyStreams} from '../src/daddy-native.js';
+import {automaticDaddyEventStreams,automaticDaddyStreams} from '../src/daddy-native.js';
 import {handle} from '../src/worker.js';
 import {accessHash,newAccessToken} from '../src/private-store.js';
 
@@ -97,6 +97,47 @@ test('the advertised native option goes through the actual Worker router and ret
   const media=await handle(new Request(uri),{},fetcher);
   assert.equal(media.status,200);assert.equal(media.headers.get('content-type'),'video/mp2t');
   assert.equal(media.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await media.arrayBuffer()),ts);
+});
+
+test('a later conference channel resolves its offered WideIPTV player and plays through a cold Worker',async()=>{
+  const site='https://thedaddy.li',wide='https://wideiptv.top',cdn='https://cdn.wideiptv.top';
+  const signedMaster=cdn+'/Conference/index.m3u8?token=fixture';
+  const signedRendition=cdn+'/Conference/tracks-v1a1/mono.m3u8?token=fixture';
+  const signedSegment=cdn+'/Conference/tracks-v1a1/part.ts?token=fixture';
+  const requests=[];
+  const fetcher=async (raw,options)=>{
+    const url=String(raw);requests.push(url);
+    if([site+'/stream/stream-901.php',site+'/stream/stream-902.php'].includes(url))return new Response('No media');
+    if([site+'/watch.php?id=901',site+'/watch.php?id=902'].includes(url))return new Response('',{status:403});
+    if(url===site+'/stream/stream-903.php')return new Response(
+      `<button data-url="${site}/cast/stream-903.php">Cast</button><button data-url="${site}/player/stream-903.php">Player</button>`);
+    if(url===site+'/player/stream-903.php')return new Response(`<iframe id="thatframe" src="${wide}/daddy.php?stream=Conference"></iframe>`);
+    if(url===wide+'/daddy.php?stream=Conference')return new Response('<iframe src="/player/Conference"></iframe>');
+    if(url===wide+'/player/Conference')return new Response(`streamUrl: "${signedMaster}"`);
+    assert.equal(options.headers.Referer,wide+'/');
+    assert.equal(options.headers.Origin,wide);
+    if(url===signedMaster)return new Response(`#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1200\n${signedRendition}`);
+    if(url===signedRendition)return new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\n${signedSegment}`);
+    if(url===signedSegment)return new Response(ts,{status:options.headers.Range?206:200});
+    assert.fail('Unexpected player or media request');
+  };
+  const channels=['901','902','903'].map(id=>({id,name:'Sender '+id}));
+  const options=await automaticDaddyEventStreams([{channels}],{DADDY_NATIVE_RESOLVE:'true'},fetcher,
+    {playbackOrigin:origin,maxChannels:5});
+  assert.equal(options.length,1);
+  assert.equal(options[0].name,'DaddyLive HLS · Sender 903');
+  assert.equal(new URL(options[0].url).searchParams.get('variant'),'player');
+  assert(!options[0].url.includes('token='));
+  assert(!requests.includes(site+'/cast/stream-903.php'));
+  const cold=(url,options)=>fetcher(url,options);
+  const master=await handle(new Request(options[0].url),{},cold);
+  assert.equal(master.status,200);
+  const rendition=(await master.text()).split('\n').find(line=>line.startsWith(origin));
+  const mediaPlaylist=await handle(new Request(rendition),{},cold);
+  const media=(await mediaPlaylist.text()).split('\n').find(line=>line.startsWith(origin));
+  const response=await handle(new Request(media,{headers:{Range:'bytes=0-375'}}),{},cold);
+  assert.equal(response.status,206);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),ts.subarray(0,376));
 });
 
 test('a private HLS option carries its device key through the playlist and segments, then stops after revocation',async()=>{

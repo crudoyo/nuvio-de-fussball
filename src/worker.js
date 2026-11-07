@@ -26,7 +26,7 @@ import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,sele
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
 export {encodeConfig,decodeConfig,manifestUrl} from './addon-config.js';
-export const VERSION = '0.6.1';
+export const VERSION = '0.6.2';
 const API = 'https://api.openligadb.de';
 // Public addons provide their own catalogs/stream endpoints.
 // PenguPlay's bare manifest has no Live TV settings: use the personal config URL.
@@ -467,7 +467,8 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
         String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'
           ?verifiedNativeStreams(mapped,(url,options)=>{takeDaddy();return fetcher(url,options);})
           :mapped,
-        automaticDaddyEventStreams([event],env,fetcher,{signal:request.signal,origin:daddy.siteOrigin,playbackOrigin:origin+accessPrefix,takeRequest:takeDaddy})
+        automaticDaddyEventStreams([event],env,fetcher,{signal:request.signal,origin:daddy.siteOrigin,
+          playbackOrigin:origin+accessPrefix,takeRequest:takeDaddy,maxChannels:5})
       ]);
       const browser=String(env.NATIVE_ONLY||'').toLowerCase()!=='true'&&String(env.DADDY_WEB_PLAYERS||'').toLowerCase()==='true'
         ?daddyPlayersForEvents([event],daddy.siteOrigin):[];

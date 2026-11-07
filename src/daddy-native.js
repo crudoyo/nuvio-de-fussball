@@ -19,7 +19,12 @@ function resource(raw,base){
     return url;
   }catch{return null;}
 }
-function player(raw,base){const u=resource(raw,base);return u&&(daddySiteUrl(u)||HOSTS.has(new URL(u).hostname))?u:null;}
+function player(raw,base){
+  const u=resource(raw,base);
+  if(!u)return null;
+  if(new URL(u).hostname==='wideiptv.top')return adapterPlayerUrl(u,'',base);
+  return daddySiteUrl(u)||HOSTS.has(new URL(u).hostname)?u:null;
+}
 function attributes(tag){
   const out={};
   for(const m of tag.matchAll(/\b([\w-]+)\s*=\s*(["'])(.*?)\2/gs))out[m[1].toLowerCase()]=decode(m[3]);
@@ -120,11 +125,11 @@ async function checkHls(url,headers,fetcher,context){
   }
   fail('playlist_depth_limit');
 }
-export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin,takeRequest}={}){
+export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin=DADDY_PRIMARY,playbackOrigin,takeRequest,timeout=6000}={}){
   if(signal?.aborted)throw signal.reason;
   const start=daddyPlayerUrl(channelId,origin);
   if(!start)return {status:'invalid_channel',stream:null};
-  const context=daddyRequestContext({signal,timeout:6000,takeRequest});context.channelId=String(channelId).trim();
+  const context=daddyRequestContext({signal,timeout,takeRequest});context.channelId=String(channelId).trim();
   const queue=[{url:start,referer:new URL(start).origin+'/',entry:true}],seen=new Set();let status='no_public_media';
   const checks={pages:0,contentFrames:0,offeredAlternatives:0,mediaConfigurations:0,providerTransportPages:0};
   try{
@@ -141,7 +146,7 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       try{
         response=await get(page.url,{'User-Agent':AGENT,Referer:page.referer},fetcher,context,false,true);
       }catch(error){
-        if(!page.optional||error.message!=='upstream_http_error')throw error;
+        if(!page.optional||!['upstream_http_error','access_denied','redirect_not_supported'].includes(error.message))throw error;
         continue;
       }
       page.url=response.url;
@@ -179,7 +184,12 @@ export async function resolveDaddyChannel(channelId,fetcher=fetch,{signal,origin
       // Only offered same-channel alternatives; never manufacture media addresses.
       for(const tag of html.matchAll(/<(?:button|a)\b[^>]*\bdata-url\s*=[^>]*>/gi)){
         const a=attributes(tag[0]),url=player(a['data-url'],page.url);
-        if(url&&daddyChannelPage(url,channelId)&&!seen.has(url)&&queue.length<12){checks.offeredAlternatives++;queue.push({url,referer:page.url});}
+        if(url&&daddyChannelPage(url,channelId)&&!seen.has(url)&&queue.length<12){
+          checks.offeredAlternatives++;
+          const alternative={url,referer:page.url,optional:true};
+          if(new URL(url).pathname.startsWith('/player/'))queue.unshift(alternative);
+          else queue.push(alternative);
+        }
       }
       // Current Android catalogue uses this public channel-selection page.
       // Read its offered buttons too; the legacy stream page may omit them.
@@ -201,12 +211,19 @@ export async function automaticDaddyStreams(game,events,matchScore,env,fetcher,o
 }
 export async function automaticDaddyEventStreams(events,env,fetcher,options={}){
   if(String(env.DADDY_NATIVE_RESOLVE||'').toLowerCase()!=='true')return [];
-  const channels=[...new Map(events.flatMap(e=>e.channels).map(c=>[c.id,c])).values()].slice(0,2);
-  const results=await Promise.all(channels.map(async channel=>{
-    const result=await resolveDaddyChannel(channel.id,fetcher,options);
-    options.onDiagnostic?.(channel.id,result);
-    if(result.stream&&result.stream.url.includes('/daddy/live/'))result.stream.name='DaddyLive HLS · '+channel.name;
-    return result;
-  }));
-  return results.flatMap(r=>r.stream?[r.stream]:[]);
+  const channels=[...new Map(events.flatMap(e=>e.channels).map(c=>[c.id,c])).values()].slice(0,options.maxChannels??2);
+  const deadline=Date.now()+6000;
+  for(let index=0;index<channels.length;index+=2){
+    const timeout=deadline-Date.now();
+    if(timeout<=0)break;
+    const results=await Promise.all(channels.slice(index,index+2).map(async channel=>{
+      const result=await resolveDaddyChannel(channel.id,fetcher,{...options,timeout});
+      options.onDiagnostic?.(channel.id,result);
+      if(result.stream&&result.stream.url.includes('/daddy/live/'))result.stream.name='DaddyLive HLS · '+channel.name;
+      return result.stream;
+    }));
+    const streams=results.filter(Boolean);
+    if(streams.length)return streams;
+  }
+  return [];
 }
