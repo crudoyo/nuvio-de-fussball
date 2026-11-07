@@ -4,7 +4,7 @@ import {readSettingsForm} from './addon-config.js';
 
 const COOKIE='__Secure-nuvio-admin',SESSION_SECONDS=8*3600,encoder=new TextEncoder();
 const actions=new Set(['friend','invite','limit','block','revoke','login','logout']);
-const hoursOptions=new Set(['24','72','168']);
+const hoursOptions=new Map([['24',24],['72',72],['168',168],['forever',null]]);
 const limitOptions=new Set(['1','2','3','4']);
 // Losing the explicit flag in a later deploy must not reopen a provisioned private Worker.
 export const privateAccessEnabled=env=>env.PRIVATE_DB!==undefined||env.PRIVATE_ADMIN_KEY!==undefined||
@@ -65,19 +65,20 @@ async function handleAdmin(request,url,store,secret){
     const body=(Math.floor(Date.now()/1000)+SESSION_SECONDS)+'.'+newAccessToken();
     return redirectAdmin(cookie(body+'.'+await sign(secret,body),SESSION_SECONDS));
   }
-  const friend=form.get('friend')||'',slot=form.get('slot')||'',limit=form.get('limit'),hours=form.get('hours');
+  const friend=form.get('friend')||'',slot=form.get('slot')||'',limit=form.get('limit');
+  const hours=hoursOptions.get(form.get('hours'));
   const show=async (message,status=200,invite)=>html(adminPage(await store.list(),{
     message,...(invite?{inviteUrl:url.origin+'/e/'+invite.token,expires:invite.expires}:{})}),status);
   if(action==='friend'){
     const name=(form.get('name')||'').trim();
-    if(!name||name.length>48||!limitOptions.has(limit)||!hoursOptions.has(hours))
+    if(!name||name.length>48||!limitOptions.has(limit)||hours===undefined)
       return show('Bitte Namen, Geräteplätze und Gültigkeit prüfen.',400);
-    return show('Freund angelegt und einen Platz reserviert.',201,await store.createFriend(name,Number(limit),Number(hours)));
+    return show('Freund angelegt und einen Platz reserviert.',201,await store.createFriend(name,Number(limit),hours));
   }
   if(!accessIdPattern.test(friend))return text('Ungültiger Freund',400);
   if(action==='invite'){
-    if(!hoursOptions.has(hours))return text('Ungültige Gültigkeit',400);
-    const invite=await store.invite(friend,Number(hours));
+    if(hours===undefined)return text('Ungültige Gültigkeit',400);
+    const invite=await store.invite(friend,hours);
     return invite?show('Ein Geräteplatz reserviert.',201,invite):show('Kein freier Geräteplatz oder Zugang gesperrt.',409);
   }
   if(action==='limit'){
@@ -110,8 +111,8 @@ export async function handlePrivateAccess(request,env,addon){
       else if(request.method==='POST'&&!sameOrigin(request,url))response=forbidden();
       else{
         const invite=await store.invitation(token);
-        response=invite?await addon({invite:{name:invite.name,action:path,activate:async name=>{
-          const key=await store.activate(token,name);return key?'/a/'+key:null;
+        response=invite?await addon({invite:{name:invite.name,action:path,activate:async()=>{
+          const key=await store.activate(token);return key?'/a/'+key:null;
         }}}):missing();
       }
     }else{

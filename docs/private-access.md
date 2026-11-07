@@ -4,9 +4,9 @@ Im privaten Modus dient der Worker nur dem eingeladenen Freundeskreis. Unter **`
 
 ## Freunde und Geräte verwalten
 
-1. In der Verwaltung **Freund einladen** wählen, einen Spitznamen und die erlaubten Geräteplätze eintragen. Standard sind zwei Plätze und 72 Stunden Gültigkeit.
+1. In der Verwaltung **Freund einladen** wählen, einen Spitznamen und die erlaubten Geräteplätze eintragen. Standard sind zwei Plätze und 72 Stunden Gültigkeit. Mit **Immer** bleibt die Einladung bis zum Einlösen oder Zurückziehen gültig.
 2. Den angezeigten Link kopieren und privat weitergeben. Er reserviert einen Geräteplatz und wird aus Sicherheitsgründen nur bei Erstellung im Klartext angezeigt.
-3. Der Freund öffnet den Link beispielsweise am Handy, trägt einen Namen wie **Wohnzimmer-TV** ein und wählt seine Kataloge. Der Name dient der Übersicht und wird manuell vergeben. Erst der Klick auf **Einladung einlösen** mit gültiger Auswahl verbraucht die Einladung.
+3. Der Freund öffnet den Link beispielsweise am Handy und wählt seine Kataloge. Erst der Klick auf **Einladung einlösen** mit gültiger Auswahl verbraucht die Einladung.
 4. Für den TV **URL kopieren** wählen und die HTTPS-Adresse dort unter Add-ons importieren. Die App-Knöpfe installieren auf dem aktuell verwendeten Gerät. Nuvio, Stremio und der manuelle Import verwenden denselben Geräteschlüssel. Eine Änderung über **Auswahl bearbeiten** behält den Schlüssel und erzeugt eine URL für die geänderte Auswahl.
 5. Für das zweite Gerät **Weiteres Gerät einladen** wählen. Offene Einladungen reservieren Plätze; nach Ablauf oder Rücknahme ist der Platz wieder frei. Ein aktiver Schlüssel kann einzeln gesperrt werden. Die Sperre eines Freundes pausiert alle seine Schlüssel und Einladungen, ohne individuell widerrufene Schlüssel wiederherzustellen.
 

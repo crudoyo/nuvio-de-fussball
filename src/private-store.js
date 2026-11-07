@@ -5,13 +5,16 @@ export const base64url=bytes=>btoa(String.fromCharCode(...new Uint8Array(bytes))
   .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 export const newAccessToken=()=>base64url(crypto.getRandomValues(new Uint8Array(32)));
 export const accessHash=async value=>base64url(await crypto.subtle.digest('SHA-256',encoder.encode(value)));
+// Use zero for invitations without a deadline in the existing NOT NULL column.
+export const NO_INVITE_EXPIRY=0;
 const usedSlots=`SELECT COUNT(*) FROM access_slots s WHERE s.friend_id=f.id
-  AND s.revoked_at IS NULL AND (s.activated_at IS NOT NULL OR s.expires_at>?)`;
+  AND s.revoked_at IS NULL AND (s.activated_at IS NOT NULL OR s.expires_at=${NO_INVITE_EXPIRY} OR s.expires_at>?)`;
 
 export function accessStore(db,clock=Date.now){
   const sql=(query,...args)=>db.prepare(query).bind(...args);
   async function pendingInvite(friendId,hours,now){
-    const id=crypto.randomUUID(),token=newAccessToken(),expires=now+hours*3600000;
+    const id=crypto.randomUUID(),token=newAccessToken();
+    const expires=hours===null?NO_INVITE_EXPIRY:now+hours*3600000;
     const stmt=sql(`INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
       SELECT ?,f.id,?,?,? FROM friends f WHERE f.id=? AND f.blocked=0 AND (${usedSlots})<f.slot_limit
       RETURNING id`,id,await accessHash(token),expires,now,friendId,now);
@@ -21,7 +24,7 @@ export function accessStore(db,clock=Date.now){
     async list(){
       const [friends,slots,audit]=await db.batch([
         sql('SELECT id,name,slot_limit,blocked FROM friends ORDER BY created_at,id'),
-        sql('SELECT id,friend_id,device_name,expires_at,activated_at,revoked_at FROM access_slots ORDER BY created_at,id'),
+        sql('SELECT id,friend_id,expires_at,activated_at,revoked_at FROM access_slots ORDER BY created_at,id'),
         sql('SELECT a.event,a.at,f.name FROM access_audit a JOIN friends f ON f.id=a.friend_id ORDER BY a.id DESC LIMIT 15')
       ]);
       return {friends:friends.results,slots:slots.results,audit:audit.results,now:clock()};
@@ -37,16 +40,18 @@ export function accessStore(db,clock=Date.now){
     },
     async invitation(token){
       return sql(`SELECT f.name,s.expires_at FROM access_slots s JOIN friends f ON f.id=s.friend_id
-        WHERE s.invite_hash=? AND s.expires_at>? AND s.activated_at IS NULL AND s.revoked_at IS NULL AND f.blocked=0`,
+        WHERE s.invite_hash=? AND (s.expires_at=${NO_INVITE_EXPIRY} OR s.expires_at>?)
+        AND s.activated_at IS NULL AND s.revoked_at IS NULL AND f.blocked=0`,
       await accessHash(token),clock()).first();
     },
-    async activate(token,deviceName){
+    async activate(token){
       const key=newAccessToken(),now=clock();
       // One conditional write on the primary: no second request can consume this row.
-      const row=await sql(`UPDATE access_slots SET device_hash=?,device_name=?,activated_at=?
-        WHERE invite_hash=? AND expires_at>? AND activated_at IS NULL AND revoked_at IS NULL
+      const row=await sql(`UPDATE access_slots SET device_hash=?,activated_at=?
+        WHERE invite_hash=? AND (expires_at=${NO_INVITE_EXPIRY} OR expires_at>?)
+        AND activated_at IS NULL AND revoked_at IS NULL
         AND EXISTS(SELECT 1 FROM friends f WHERE f.id=access_slots.friend_id AND f.blocked=0)
-        RETURNING id`,await accessHash(key),deviceName,now,await accessHash(token),now).first();
+        RETURNING id`,await accessHash(key),now,await accessHash(token),now).first();
       return row?key:null;
     },
     async device(key){

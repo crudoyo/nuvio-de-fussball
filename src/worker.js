@@ -326,7 +326,7 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
         providerTokenRenewal:true,packedSegments:true}},200,0);
     if(url.pathname==='/generate'){
       const catalogs=configurationCatalogs(await leagues(env,fetcher));let form=new URLSearchParams();
-      let settings,configPrefix,name;
+      let settings,configPrefix;
       try{
         form=request.method==='POST'?await readSettingsForm(request):url.searchParams;
         const customized=Boolean(invite)||form.get('customize')==='1';
@@ -334,17 +334,13 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
         if(customized&&!selectedCatalogs(catalogs,settings).length)throw new Error('Bitte mindestens einen verfügbaren Katalog auswählen.');
         const personal=customized||settings.m.length;
         configPrefix=personal?'/u/'+encodeSettings(settings):'';
-        if(invite){
-          name=(form.get('deviceName')||'').trim();
-          if(!name||name.length>48)throw new Error('Bitte deinem Gerät einen Namen geben (maximal 48 Zeichen).');
-        }
       }catch(error){
         const chosen=form.getAll('catalog').filter(id=>/^defootball_[a-z0-9_-]{2,90}$/.test(id)).slice(0,256);
         return html(configurePage({version:VERSION,catalogs,settings:{m:[],c:chosen,b:form.get('browser')==='on'},
-          rawSources:form.get('sources')||'',browserAllowed,accessPrefix,invite,deviceName:form.get('deviceName')||'',
+          rawSources:form.get('sources')||'',browserAllowed,accessPrefix,invite,
           error:error.message}),400);
       }
-      const authorizedPrefix=invite?await invite.activate(name):accessPrefix;
+      const authorizedPrefix=invite?await invite.activate():accessPrefix;
       if(invite&&!authorizedPrefix)return html('<!doctype html><meta charset="utf-8"><p>Einladung nicht mehr verfügbar.</p>',410);
       return html(installationPage({version:VERSION,url:origin+authorizedPrefix+configPrefix+'/manifest.json',settings,catalogs,browserAllowed,privateMode}));
     }

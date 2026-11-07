@@ -65,6 +65,10 @@ try{
   function href(html,id){
     return new RegExp('<a[^>]*id="'+id+'"[^>]*href="([^"]+)"').exec(html)?.[1];
   }
+  function slotFor(html,friendId,label){
+    const section=html.split('id="friend-'+friendId+'"')[1]?.split('</section>')[0]||'';
+    return new RegExp('<h3>'+label+'</h3>[\\s\\S]*?name="slot" value="([^"]+)"').exec(section)?.[1];
+  }
   let ready=false;
   for(let i=0;i<45&&child.exitCode===null;i++){
     try{
@@ -94,8 +98,9 @@ try{
   await expect(await request('/admin/friend',{cookie:session.slice(0,-1)+(session.endsWith('A')?'B':'A'),
     body:{name:'Test',limit:'2',hours:'72'}}),403,'Modified session signature');
   await admin('invite',{friend:expiredFriend,hours:'24'},201);
-  const created=await admin('friend',{name:'Max <Test>',limit:'2',hours:'72'},201);
+  const created=await admin('friend',{name:'Max <Test>',limit:'2',hours:'forever'},201);
   assert(created.includes('Max &lt;Test&gt;')&&!created.includes('Max <Test>'),'Escaped friend label');
+  assert.match(created,/Einmal einlösbar · ohne Ablaufdatum/);
   const friend=/<section class="panel" id="friend-([^"]+)"><div class="row"><div><h2>Max &lt;Test&gt;<\/h2>/.exec(created)?.[1];
   const invite=field(created,'invite-url');
   assert(friend&&invite,'Friend and invitation were created');
@@ -103,19 +108,19 @@ try{
   await admin('block',{friend,blocked:'1'},403,'https://other.example');
   const phone='Nuvio test mobile browser',tv='Nuvio test television';
   const opening=await expect(await request(invite,{client:phone}),200,'Open invitation on phone');
-  assert(opening.includes('Einladung einlösen')&&opening.includes('Name des Zielgeräts'),'Invitation allows manual target device selection');
+  assert(opening.includes('Einladung einlösen')&&!opening.includes('name="deviceName"'),'Invitation requires no device label');
   await expect(await request(invite),200,'Preview must not consume invite');
   const selected=['defootball_bl3_sunday','defootball_bl1_friday'];
-  const activation=[['deviceName','Wohnzimmer-TV'],...selected.map(id=>['catalog',id])];
+  const activation=selected.map(id=>['catalog',id]);
   await expect(await request(invite,{body:activation,from:'https://other.example'}),403,'Cross-origin activation');
-  await expect(await request(invite,{body:{deviceName:'Tablet'}}),400,'Invalid configuration must not consume invite');
+  await expect(await request(invite,{body:{customize:'1'}}),400,'Invalid configuration must not consume invite');
   const simultaneous=await Promise.all([request(invite,{body:activation,client:phone}),request(invite,{body:activation,client:phone})]);
   assert.equal(simultaneous.filter(r=>r.status===200).length,1,'Exactly one concurrent redemption can succeed');
   assert(simultaneous.every(r=>[200,404,410].includes(r.status)),'Only the winning request receives a key');
   const [install]=await Promise.all(simultaneous.sort((a,b)=>a.status-b.status).map(r=>r.text()));
   const tvImport=field(install,'manifest-url');
   assert(tvImport?.includes('/a/')&&tvImport.endsWith('/manifest.json'),'Protected import URL');
-  assert(install.includes('Auf dem TV oder einem anderen Gerät installieren'),'Import instructions cover another device');
+  assert(install.includes('Auf einem anderen Gerät installieren'),'Import instructions cover another device');
   for(const app of ['nuvio','stremio'])assert.equal(href(install,'install-'+app),tvImport.replace('http:',app+':'),'App link preserves full private path');
   const manifest=JSON.parse(await expect(await request(tvImport,{client:tv}),200,'Import on TV after phone activation'));
   await expect(await request(tvImport,{client:tv}),200,'Installed TV can fetch the manifest again');
@@ -129,19 +134,27 @@ try{
   assert(field(changed,'manifest-url')?.startsWith(origin+prefix+'/u/'),'Updated profile uses the same key');
   await expect(await request(invite),404,'Consumed invite cannot be opened again');
   await expect(await request(prefix+'/debug/sources.json'),404,'Friend diagnostics remain closed');
-  const reservations=await Promise.all([request('/admin/invite',{cookie:session,body:{friend,hours:'72'}}),
-    request('/admin/invite',{cookie:session,body:{friend,hours:'72'}})]);
+  const reservations=await Promise.all([request('/admin/invite',{cookie:session,body:{friend,hours:'forever'}}),
+    request('/admin/invite',{cookie:session,body:{friend,hours:'forever'}})]);
   assert.deepEqual(reservations.map(r=>r.status).sort(),[201,409],'Concurrent reservations obey the limit');
   const reservationsHtml=await Promise.all(reservations.map(r=>r.text()));
-  const second=field(reservationsHtml[reservations.findIndex(r=>r.status===201)],'invite-url');
-  assert(second,'Second device invitation created');
-  const laptop=field(await expect(await request(second,{body:{deviceName:'Laptop',catalog:'defootball_bl1'}}),200,'Activate laptop'),'manifest-url');
+  const reserved=reservationsHtml[reservations.findIndex(r=>r.status===201)];
+  const pending=field(reserved,'invite-url');
+  const pendingSlot=slotFor(reserved,friend,'Einladung 2');
+  assert(pending&&pendingSlot,'Second invitation without a deadline reserves a slot');
+  assert.match(reserved,/Einladung offen · ohne Ablaufdatum/);
+  await admin('limit',{friend,limit:'1'},409);
+  await admin('revoke',{friend,slot:pendingSlot},200);
+  await expect(await request(pending),404,'Revoked invitation without a deadline cannot be opened');
+  const second=field(await admin('invite',{friend,hours:'72'},201),'invite-url');
+  assert(second,'A timed invitation can reserve the freed slot');
+  const laptop=field(await expect(await request(second,{body:{catalog:'defootball_bl1'}}),200,'Activate second key'),'manifest-url');
   assert(laptop&&laptop!==tvImport,'Each device receives a distinct key');
   await admin('limit',{friend,limit:'1'},409);
   const overview=await expect(await request('/admin',{cookie:session}),200,'List devices');
   assert(overview.includes('2 von 2 Plätzen belegt oder reserviert'));
-  const tvSlot=/<h3>Wohnzimmer-TV<\/h3>[\s\S]*?name="slot" value="([^"]+)"/.exec(overview)?.[1];
-  assert(tvSlot,'Tablet slot listed');
+  const tvSlot=slotFor(overview,friend,'Schlüssel 1');
+  assert(tvSlot,'First key listed');
   await admin('revoke',{friend,slot:tvSlot},200);
   await expect(await request(tvImport),403,'TV is revoked');
   await expect(await request(laptop),200,'Laptop remains authorized');

@@ -1,6 +1,10 @@
+import {NO_INVITE_EXPIRY} from './private-store.js';
+
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=value=>new Intl.DateTimeFormat('de-DE',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Berlin'}).format(value);
-const counts=(slots,now)=>slots.filter(s=>s.revoked_at===null&&(s.activated_at!==null||s.expires_at>now)).length;
+const isExpired=(slot,now)=>slot.activated_at===null&&slot.expires_at!==NO_INVITE_EXPIRY&&slot.expires_at<=now;
+const counts=(slots,now)=>slots.filter(slot=>slot.revoked_at===null&&!isExpired(slot,now)).length;
+const validity=expires=>expires===NO_INVITE_EXPIRY?'ohne Ablaufdatum':'bis '+date(expires)+' (Berlin)';
 const events={friend_created:'Freund angelegt',friend_blocked:'Zugang gesperrt',friend_unblocked:'Zugang freigegeben',
   limit_changed:'Geräteplätze geändert',invite_created:'Einladung erstellt',device_activated:'Gerät aktiviert',
   invite_cancelled:'Einladung zurückgezogen',device_revoked:'Schlüssel gesperrt'};
@@ -12,7 +16,7 @@ function page(content,title='Verwaltung',script=''){
 }
 const form=(action,content,hidden={})=>`<form method="post" action="${escape(action)}" class="actions">${Object.entries(hidden).map(([name,value])=>`<input type="hidden" name="${escape(name)}" value="${escape(value)}">`).join('')}${content}</form>`;
 const limits=value=>[1,2,3,4].map(n=>`<option value="${n}"${n===value?' selected':''}>${n}</option>`).join('');
-const expiry=`<label>Gültig für<select name="hours"><option value="24">24 Stunden</option><option value="72" selected>72 Stunden</option><option value="168">7 Tage</option></select></label>`;
+const expiry=`<label>Gültig für<select name="hours"><option value="24">24 Stunden</option><option value="72" selected>72 Stunden</option><option value="168">7 Tage</option><option value="forever">Immer</option></select></label>`;
 export function adminLogin(message=''){
   return page(`<section class="login"><p class="brand">DEUTSCHER FUSSBALL</p><h1>Privater Zugang</h1><div class="panel"><h2>Verwaltung anmelden</h2>${message?`<p class="danger" role="alert">${escape(message)}</p>`:''}
     <form method="post" action="/admin/login"><label>Verwaltungsschlüssel<input type="password" name="key" autocomplete="current-password" maxlength="43" required></label><button class="primary" type="submit">Anmelden</button></form></div></section>`,'Anmelden');
@@ -21,13 +25,14 @@ export function adminPage(data,{message='',inviteUrl='',expires}={}){
   const {friends,slots,audit,now}=data;
   const friendRows=friends.map(friend=>{
     const own=slots.filter(s=>s.friend_id===friend.id),used=counts(own,now);
-    const slotRows=own.map(slot=>{
-      const active=slot.activated_at!==null,expired=!active&&slot.expires_at<=now;
+    const slotRows=own.map((slot,index)=>{
+      const active=slot.activated_at!==null,expired=isExpired(slot,now);
       const status=slot.revoked_at!==null?(active?'Schlüssel gesperrt':'Einladung zurückgezogen'):
         expired?'Einladung abgelaufen':friend.blocked?'Zugang pausiert':active?'Schlüssel aktiv':'Einladung offen';
       const action=slot.revoked_at===null&&!expired?form('/admin/revoke',
         `<button class="danger" type="submit">${active?'Schlüssel sperren':'Einladung zurückziehen'}</button>`,{friend:friend.id,slot:slot.id}):'';
-      return `<div class="slot row"><div><h3>${escape(slot.device_name||'Geräteeinladung')}</h3><p class="hint">${escape(status)}${!active&&!expired&&slot.revoked_at===null?' · bis '+escape(date(slot.expires_at)):''}</p></div>${action}</div>`;
+      const label=(active?'Schlüssel ':'Einladung ')+(index+1);
+      return `<div class="slot row"><div><h3>${label}</h3><p class="hint">${escape(status)}${!active&&!expired&&slot.revoked_at===null?' · '+escape(validity(slot.expires_at)):''}</p></div>${action}</div>`;
     }).join('');
     return `<section class="panel" id="friend-${escape(friend.id)}"><div class="row"><div><h2>${escape(friend.name)}</h2><p class="hint">${used} von ${friend.slot_limit} Plätzen belegt oder reserviert · ${friend.blocked?'Gesperrt':'Freigegeben'}</p></div>
       ${form('/admin/block',`<button class="${friend.blocked?'':'danger'}" type="submit">${friend.blocked?'Zugang freigeben':'Zugang sperren'}</button>`,{friend:friend.id,blocked:friend.blocked?'0':'1'})}</div>
@@ -37,7 +42,7 @@ export function adminPage(data,{message='',inviteUrl='',expires}={}){
   }).join('');
   return page(`<div class="row"><p class="brand">DEUTSCHER FUSSBALL</p>${form('/admin/logout','<button type="submit">Abmelden</button>')}</div><div class="heading"><h1>Privater Zugang</h1><p class="hint">Freunde, Einladungen und Geräteplätze verwalten.</p></div>
     ${message?`<p class="message" role="status">${escape(message)}</p>`:''}
-    ${inviteUrl?`<section class="panel"><h2>Einladung bereit</h2><p class="hint">Einmal nutzbar bis ${escape(date(expires))} (Berlin). Kopiere den Link jetzt für deinen Freund.</p><label>Einladungslink<input id="invite-url" type="url" readonly value="${escape(inviteUrl)}"></label><div class="actions" style="margin-top:10px"><button type="button" id="copy-invite">Einladungslink kopieren</button><span id="copy-feedback" class="hint" role="status"></span></div></section>`:''}
+    ${inviteUrl?`<section class="panel"><h2>Einladung bereit</h2><p class="hint">Einmal einlösbar · ${escape(validity(expires))}. Kopiere den Link jetzt für deinen Freund.</p><label>Einladungslink<input id="invite-url" type="url" readonly value="${escape(inviteUrl)}"></label><div class="actions" style="margin-top:10px"><button type="button" id="copy-invite">Einladungslink kopieren</button><span id="copy-feedback" class="hint" role="status"></span></div></section>`:''}
     <section class="panel"><h2>Freund einladen</h2>${form('/admin/friend',`<label>Name oder Spitzname<input name="name" maxlength="48" required></label><label>Geräteplätze<select name="limit">${limits(2)}</select></label>${expiry}<button class="primary" type="submit">Einladung erstellen</button>`)}</section>
     ${friendRows}
     <details class="panel"><summary>Verwaltungsprotokoll</summary>${audit.length?`<ol>${audit.map(e=>`<li>${escape(date(e.at))} · ${escape(e.name)} · ${escape(events[e.event]||e.event)}</li>`).join('')}</ol>`:'<p class="hint">Noch keine Einträge.</p>'}</details>`,
