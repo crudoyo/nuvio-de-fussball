@@ -28,7 +28,7 @@ export function configurationLogin(message=''){
     ${message?`<p class="danger" role="alert">${escape(message)}</p>`:''}
     <form method="post" action="/configure/login"><label>Passwort<input type="password" name="code" autocomplete="one-time-code" maxlength="27" required></label><button class="primary" type="submit">Anmelden</button></form></div></section>`,'Anmelden');
 }
-export function adminPage(data,{message='',configureUrl='',invitationCode='',expires}={}){
+export function adminPage(data,{message='',configureUrl='',invitationCode='',expires,replaceInvite}={}){
   const {friends,slots,audit,now}=data;
   const friendRows=friends.map(friend=>{
     const own=slots.filter(s=>s.friend_id===friend.id),used=counts(own,now);
@@ -38,12 +38,15 @@ export function adminPage(data,{message='',configureUrl='',invitationCode='',exp
         expired?(claimed?'Konfiguration abgelaufen':'Einladung abgelaufen'):
         friend.blocked?(active?'Zugang pausiert':'Einladung pausiert'):
         active?'Schlüssel aktiv':claimed?'Konfiguration läuft':'Einladung offen';
-      const action=slot.revoked_at===null&&!expired?form('/admin/revoke',
-        `<button class="danger" type="submit">${active?'Schlüssel sperren':'Einladung zurückziehen'}</button>`,{friend:friend.id,slot:slot.id}):'';
+      const available=slot.revoked_at===null&&!expired,fields={friend:friend.id,slot:slot.id};
+      const password=available&&!active&&!claimed&&!friend.blocked
+        ?form('/admin/password','<button type="submit">Passwort anzeigen</button>',fields):'';
+      const revoke=available?form('/admin/revoke',
+        `<button class="danger" type="submit">${active?'Schlüssel sperren':'Einladung zurückziehen'}</button>`,fields):'';
       const label=active?'Schlüssel '+(index+1):status;
       let detail=active?status:'';
       if(!active&&!expired&&slot.revoked_at===null)detail=validity(deadline(slot));
-      return `<div class="slot row"><div><h3>${escape(label)}</h3>${detail?`<p class="hint">${escape(detail)}</p>`:''}</div>${action}</div>`;
+      return `<div class="slot row"><div><h3>${escape(label)}</h3>${detail?`<p class="hint">${escape(detail)}</p>`:''}</div><div class="actions">${password}${revoke}</div></div>`;
     }).join('');
     return `<section class="panel" id="friend-${escape(friend.id)}"><div class="row"><div><h2>${escape(friend.name)}</h2><p class="hint">${used} / ${friend.slot_limit} belegt · ${friend.blocked?'Gesperrt':'Freigegeben'}</p></div>
       ${form('/admin/block',`<button class="${friend.blocked?'':'danger'}" type="submit">${friend.blocked?'Zugang freigeben':'Zugang sperren'}</button>`,{friend:friend.id,blocked:friend.blocked?'0':'1'})}</div>
@@ -53,6 +56,7 @@ export function adminPage(data,{message='',configureUrl='',invitationCode='',exp
   }).join('');
   return page(`<div class="row"><p class="brand">${ADDON_NAME}</p>${form('/admin/logout','<button type="submit">Abmelden</button>')}</div><div class="heading"><h1>Privater Zugang</h1></div>
     ${message?`<p class="message" role="status">${escape(message)}</p>`:''}
+    ${replaceInvite?form('/admin/replace-password','<button class="primary" type="submit">Passwort ersetzen</button>',replaceInvite):''}
     ${invitationCode?`<section class="panel"><h2>Einladung bereit</h2><p class="hint">Einmal einlösbar · ${escape(validity(expires))}</p><label>Konfigurationsseite<input id="configure-url" type="url" readonly value="${escape(configureUrl)}"></label><label>Passwort<input id="invitation-code" type="text" readonly value="${escape(invitationCode)}"></label><div class="actions" style="margin-top:10px"><button type="button" id="copy-invite">Einladung kopieren</button><span id="copy-feedback" class="hint" role="status"></span></div></section>`:''}
     <section class="panel"><h2>Einladung bereitstellen</h2>${form('/admin/friend',`<label>Name<input name="name" maxlength="48" required></label><label>Max. Schlüssel<select name="limit">${limits(2)}</select></label>${expiry}<button class="primary" type="submit">Einladung erstellen</button>`)}</section>
     ${friendRows}

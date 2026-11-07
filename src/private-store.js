@@ -7,10 +7,16 @@ export const base64url=bytes=>btoa(String.fromCharCode(...new Uint8Array(bytes))
   .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 export const newAccessToken=()=>base64url(crypto.getRandomValues(new Uint8Array(32)));
 export const accessHash=async value=>base64url(await crypto.subtle.digest('SHA-256',encoder.encode(value)));
+export async function signAccess(secret,value){
+  const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  return base64url(await crypto.subtle.sign('HMAC',key,encoder.encode(value)));
+}
 // Use zero for invitations without a deadline in the existing NOT NULL column.
 export const NO_INVITE_EXPIRY=0;
 const validInvitation=`(expires_at=${NO_INVITE_EXPIRY} OR expires_at>?)`;
 const activeFriend='EXISTS(SELECT 1 FROM friends f WHERE f.id=access_slots.friend_id AND f.blocked=0)';
+const openSlot=`id=? AND friend_id=? AND ${validInvitation} AND setup_hash IS NULL
+  AND activated_at IS NULL AND revoked_at IS NULL AND ${activeFriend}`;
 const usedSlots=`SELECT COUNT(*) FROM access_slots s WHERE s.friend_id=f.id
   AND s.revoked_at IS NULL AND (
     s.activated_at IS NOT NULL
@@ -18,10 +24,12 @@ const usedSlots=`SELECT COUNT(*) FROM access_slots s WHERE s.friend_id=f.id
     OR s.setup_expires_at>?
   )`;
 
-export function accessStore(db,clock=Date.now){
+export function accessStore(db,secret,clock=Date.now){
   const sql=(query,...args)=>db.prepare(query).bind(...args);
+  // The slot ID and secret reproduce the password without storing it in D1.
+  const codeForSlot=async id=>'NV-'+(await signAccess(secret,'nuvio-invite-v1:'+id)).slice(0,24);
   async function pendingInvite(friendId,hours,now){
-    const id=crypto.randomUUID(),token='NV-'+base64url(crypto.getRandomValues(new Uint8Array(18)));
+    const id=crypto.randomUUID(),token=await codeForSlot(id);
     const expires=hours===null?NO_INVITE_EXPIRY:now+hours*3600000;
     const stmt=sql(`INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
       SELECT ?,f.id,?,?,? FROM friends f WHERE f.id=? AND f.blocked=0 AND (${usedSlots})<f.slot_limit
@@ -53,6 +61,13 @@ export function accessStore(db,clock=Date.now){
     async invite(friendId,hours){
       const {token,expires,stmt}=await pendingInvite(friendId,hours,clock());
       return await stmt.first()?{friendId,token,expires}:null;
+    },
+    async invitationPassword(friendId,id,replace=false){
+      const token=await codeForSlot(id),hash=await accessHash(token),now=clock();
+      const row=await (replace
+        ?sql(`UPDATE access_slots SET invite_hash=? WHERE ${openSlot} RETURNING invite_hash,expires_at`,hash,id,friendId,now)
+        :sql(`SELECT invite_hash,expires_at FROM access_slots WHERE ${openSlot}`,id,friendId,now)).first();
+      return row?{token:row.invite_hash===hash?token:null,expires:row.expires_at}:null;
     },
     async invitation(token){
       return sql(`SELECT f.name,s.expires_at FROM access_slots s JOIN friends f ON f.id=s.friend_id

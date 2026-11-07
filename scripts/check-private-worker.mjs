@@ -35,16 +35,20 @@ async function freePort(){
 let child,log='';
 try{
   wrangler(['d1','migrations','apply','PRIVATE_DB']);
-  const expiredFriend=crypto.randomUUID(),expiredToken=newAccessToken(),past=Date.now()-1000;
+  const expiredFriend=crypto.randomUUID(),expiredSlot=crypto.randomUUID(),expiredToken=newAccessToken(),past=Date.now()-1000;
   const legacyFriend=crypto.randomUUID(),legacyToken=newAccessToken();
+  const oldFriend=crypto.randomUUID(),oldSlot=crypto.randomUUID(),oldCode='NV-'+newAccessToken().slice(0,24);
   const setupFriend=crypto.randomUUID(),expiredCode='NV-'+newAccessToken().slice(0,24),expiredSetup=newAccessToken();
   wrangler(['d1','execute','PRIVATE_DB','--command',
     `INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${expiredFriend}','Ablaufprobe',1,${past});
     INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
-    VALUES('${crypto.randomUUID()}','${expiredFriend}','${await accessHash(expiredToken)}',${past},${past});
+    VALUES('${expiredSlot}','${expiredFriend}','${await accessHash(expiredToken)}',${past},${past});
     INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${legacyFriend}','Bisheriger Einladungslink',1,${past});
     INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
     VALUES('${crypto.randomUUID()}','${legacyFriend}','${await accessHash(legacyToken)}',0,${past});
+    INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${oldFriend}','Bisheriges Passwort',1,${past});
+    INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at)
+    VALUES('${oldSlot}','${oldFriend}','${await accessHash(oldCode)}',0,${past});
     INSERT INTO friends(id,name,slot_limit,created_at) VALUES('${setupFriend}','Abgelaufene Konfiguration',1,${past});
     INSERT INTO access_slots(id,friend_id,invite_hash,expires_at,created_at,setup_hash,setup_expires_at)
     VALUES('${crypto.randomUUID()}','${setupFriend}','${await accessHash(expiredCode)}',0,${past},'${await accessHash(expiredSetup)}',${past});`]);
@@ -117,6 +121,19 @@ try{
   session=cookie.split(';')[0];
   await expect(await request('/admin/friend',{cookie:session.slice(0,-1)+(session.endsWith('A')?'B':'A'),
     body:{name:'Test',limit:'2',hours:'72'}}),403,'Modified session signature');
+  await admin('password',{friend:expiredFriend,slot:expiredSlot},404);
+  const oldFields={friend:oldFriend,slot:oldSlot};
+  const oldPassword=await admin('password',oldFields,200);
+  assert(!field(oldPassword,'invitation-code'),'Old random passwords cannot be reconstructed');
+  assert.match(oldPassword,/action="\/admin\/replace-password"/);
+  const replacement=await admin('replace-password',oldFields,200);
+  assert.match(replacement,/Einmal einlösbar · ohne Ablaufdatum/);
+  const replaced=field(replacement,'invitation-code');
+  assert(invitationCodePattern.test(replaced)&&replaced!==oldCode);
+  await admin('invite',{friend:oldFriend,hours:'24'},409);
+  assert.equal(field(await admin('password',oldFields,200),'invitation-code'),replaced);
+  await expect(await request(configurationLogin,{body:{code:oldCode}}),403,'Replaced password no longer works');
+  await expect(await request(configurationLogin,{body:{code:replaced}}),303,'Replacement is redeemable');
   await admin('invite',{friend:expiredFriend,hours:'24'},201);
   await admin('invite',{friend:setupFriend,hours:'24'},201);
   const created=await admin('friend',{name:'Max <Test>',limit:'2',hours:'forever'},201);
@@ -126,7 +143,17 @@ try{
   const code=field(created,'invitation-code');
   assert.equal(field(created,'configure-url'),origin+configure);
   assert(friend&&invitationCodePattern.test(code),'Friend and password were created');
-  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(code),'Cleartext password only shown at creation');
+  const mainSlot=slotFor(created,friend,'Einladung offen');
+  assert(mainSlot);
+  const mainFields={friend,slot:mainSlot};
+  assert(!(await expect(await request('/admin',{cookie:session}),200,'Admin overview')).includes(code),'Overview does not reveal open passwords');
+  await expect(await request('/admin/password',{body:mainFields}),403,'Password lookup requires admin login');
+  await admin('password',mainFields,403,'https://other.example');
+  await admin('password',{...mainFields,friend:oldFriend},404);
+  await admin('block',{friend,blocked:'1'},200);
+  await admin('password',mainFields,404);
+  await admin('block',{friend,blocked:'0'},200);
+  assert.equal(field(await admin('password',mainFields,200),'invitation-code'),code,'Reopening reveals the original password');
   await admin('block',{friend,blocked:'1'},403,'https://other.example');
   const phone='Nuvio test mobile browser',tv='Nuvio test television';
   await expect(await request('/e/'+code),404,'Password cannot be used in the legacy link route');
@@ -139,6 +166,8 @@ try{
   assert(setupCookie&&/Path=\/configure; Secure; HttpOnly; SameSite=Strict; Max-Age=1800/.test(setupCookie)&&!setupCookie.includes(code));
   const setupSession=setupCookie.split(';')[0];
   await expect(await request(configurationLogin,{body:{code}}),403,'Password is consumed at login');
+  await admin('password',mainFields,404);
+  await admin('replace-password',mainFields,404);
   const opening=await expect(await request(configure,{cookie:setupSession,client:phone}),200,'Open configuration on phone');
   assert.match(opening,/Importlink erstellen/);
   assert.match(opening,/name="catalog"/);
@@ -176,10 +205,11 @@ try{
   const reserved=reservationsHtml[reservations.findIndex(r=>r.status===201)];
   const pending=field(reserved,'invitation-code');
   const pendingSlot=slotFor(reserved,friend,'Einladung offen');
-  assert(pending&&pendingSlot,'Second invitation without a deadline reserves a slot');
+  assert(pending&&pendingSlot&&pending!==code,'Second invitation reserves a slot with a distinct password');
   assert.match(reserved,/Einladung offen<\/h3><p class="hint">ohne Ablaufdatum/);
   await admin('limit',{friend,limit:'1'},409);
   await admin('revoke',{friend,slot:pendingSlot},200);
+  await admin('password',{friend,slot:pendingSlot},404);
   await expect(await request(configurationLogin,{body:{code:pending}}),403,'Revoked password without a deadline cannot be used');
   const second=field(await admin('invite',{friend,hours:'72'},201),'invitation-code');
   assert(invitationCodePattern.test(second),'A timed invitation can reserve the freed slot');
@@ -203,7 +233,7 @@ try{
   await expect(await request(laptop),200,'Laptop works after unpause');
   await expect(await request(tvImport),403,'Previously revoked TV stays revoked');
   await admin('logout',{},303);
-  console.log('Private workerd/D1 verified: one-time passwords, setup expiry, legacy invites, concurrent slot limits, revocation and protected imports.');
+  console.log('Private workerd/D1 verified: password lookup and replacement, one-time login, setup expiry, concurrent slot limits, revocation and protected imports.');
 }finally{
   if(child&&child.exitCode===null){
     const exit=once(child,'exit');

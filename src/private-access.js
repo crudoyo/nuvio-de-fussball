@@ -1,10 +1,10 @@
-import {accessIdPattern,accessStore,accessTokenPattern,base64url,invitationCodePattern,newAccessToken,SETUP_SESSION_SECONDS} from './private-store.js';
+import {accessIdPattern,accessStore,accessTokenPattern,invitationCodePattern,newAccessToken,SETUP_SESSION_SECONDS,signAccess} from './private-store.js';
 import {adminLogin,adminPage,configurationLogin} from './private-admin-page.js';
 import {readSettingsForm} from './addon-config.js';
 
-const COOKIE='__Secure-nuvio-admin',SESSION_SECONDS=8*3600,encoder=new TextEncoder();
+const COOKIE='__Secure-nuvio-admin',SESSION_SECONDS=8*3600;
 const SETUP_COOKIE='__Secure-nuvio-setup';
-const actions=new Set(['friend','invite','limit','block','revoke','login','logout']);
+const actions=new Set(['friend','invite','password','replace-password','limit','block','revoke','login','logout']);
 const hoursOptions=new Map([['24',24],['72',72],['168',168],['forever',null]]);
 const limitOptions=new Set(['1','2','3','4']);
 // Losing the explicit flag in a later deploy must not reopen a provisioned private Worker.
@@ -21,10 +21,7 @@ function fixedEqual(a,b){
   let mismatch=0;for(let i=0;i<a.length;i++)mismatch|=a.charCodeAt(i)^b.charCodeAt(i);
   return mismatch===0;
 }
-async function sign(secret,body){
-  const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
-  return base64url(await crypto.subtle.sign('HMAC',key,encoder.encode('nuvio-admin-v1:'+body)));
-}
+const sign=(secret,body)=>signAccess(secret,'nuvio-admin-v1:'+body);
 function cookie(name,value,path,seconds){
   return name+'='+value+'; Path='+path+'; Secure; HttpOnly; SameSite=Strict; Max-Age='+seconds;
 }
@@ -72,19 +69,19 @@ async function handleAdmin(request,url,store,secret){
   }
   const friend=form.get('friend')||'',slot=form.get('slot')||'',limit=form.get('limit');
   const hours=hoursOptions.get(form.get('hours'));
-  const show=async (message='',status=200,invite)=>html(adminPage(await store.list(),{
-    message,...(invite?{configureUrl:url.origin+'/configure',invitationCode:invite.token,expires:invite.expires}:{})}),status);
+  const show=async (message='',status=200,{invite,replaceInvite}={})=>html(adminPage(await store.list(),{
+    message,replaceInvite,...(invite?{configureUrl:url.origin+'/configure',invitationCode:invite.token,expires:invite.expires}:{})}),status);
   if(action==='friend'){
     const name=(form.get('name')||'').trim();
     if(!name||name.length>48||!limitOptions.has(limit)||hours===undefined)
       return show('Bitte Namen, Schlüsselanzahl und Gültigkeit prüfen.',400);
-    return show('',201,await store.createFriend(name,Number(limit),hours));
+    return show('',201,{invite:await store.createFriend(name,Number(limit),hours)});
   }
   if(!accessIdPattern.test(friend))return text('Ungültiger Freund',400);
   if(action==='invite'){
     if(hours===undefined)return text('Ungültige Gültigkeit',400);
     const invite=await store.invite(friend,hours);
-    return invite?show('',201,invite):show('Kein freier Platz oder Zugang gesperrt.',409);
+    return invite?show('',201,{invite}):show('Kein freier Platz oder Zugang gesperrt.',409);
   }
   if(action==='limit'){
     if(!limitOptions.has(limit))return text('Ungültiges Limit',400);
@@ -96,6 +93,11 @@ async function handleAdmin(request,url,store,secret){
     return await store.setBlocked(friend,blocked==='1')?show(blocked==='1'?'Zugang gesperrt.':'Zugang freigegeben.'):missing();
   }
   if(!accessIdPattern.test(slot))return text('Ungültiger Geräteplatz',400);
+  if(action==='password'||action==='replace-password'){
+    const invite=await store.invitationPassword(friend,slot,action==='replace-password');
+    if(!invite)return show('Die Einladung ist nicht mehr offen.',404);
+    return invite.token?show('',200,{invite}):show('Das bisherige Passwort kann nur ersetzt werden.',200,{replaceInvite:{friend,slot}});
+  }
   return await store.revoke(friend,slot)?show():missing();
 }
 async function handleConfigure(request,url,store,addon){
@@ -131,7 +133,7 @@ export async function handlePrivateAccess(request,env,addon){
   if(!env.PRIVATE_DB||!accessTokenPattern.test(env.PRIVATE_ADMIN_KEY||''))
     return protectPrivateResponse(text('Privater Zugang vorübergehend nicht verfügbar',503));
   try{
-    const store=accessStore(env.PRIVATE_DB);
+    const store=accessStore(env.PRIVATE_DB,env.PRIVATE_ADMIN_KEY);
     let response;
     if(path==='/admin'||path.startsWith('/admin/')){
       response=await handleAdmin(request,url,store,env.PRIVATE_ADMIN_KEY);
