@@ -21,7 +21,7 @@ import {sportsCatalogRequests,forwardSportsStream} from './upstream-sports.js';
 import {verifiedNativeStreams} from './manifest-check.js';
 import {automaticDaddyStreams,automaticDaddyEventStreams,resolveDaddyChannel} from './daddy-native.js';
 import {handleDaddyPlayback} from './daddy-playback.js';
-import {bundesligaSimulcasts,simulcastArtwork,SIMULCAST_ART,SIMULCAST_NAME,SIMULCAST_PREFIX} from './bundesliga-simulcast.js';
+import {leagueSimulcasts,simulcastArtwork,SIMULCAST_LEAGUES} from './league-simulcast.js';
 import {ADDON_NAME,MAX_CONFIG_LENGTH,safeUrls,decodeSettings,encodeSettings,selectedCatalogs,configuredPlayback,settingsFromForm,readSettingsForm} from './addon-config.js';
 import {configurePage,installationPage} from './configure-page.js';
 import {handlePrivateAccess,privateAccessEnabled} from './private-access.js';
@@ -201,10 +201,11 @@ function meta(m,league,origin,prefix='',statistics=null) {
     team1:{name:home,logo:teamLogo(m.team1)},team2:{name:away,logo:teamLogo(m.team2)},
     behaviorHints:{defaultVideoId:id}};
 }
-function simulcastMeta(event,origin,prefix){
-  const id=SIMULCAST_PREFIX+event.matchID,kickoff=dateLabel(event);
-  return {id,type:'tv',name:SIMULCAST_NAME,description:kickoff,posterShape:'landscape',
-    poster:`${origin}${prefix}/poster/${SIMULCAST_ART}.png`,background:`${origin}${prefix}/background/${SIMULCAST_ART}.png`,
+function simulcastMeta(event,league,origin,prefix){
+  const id=`${catalogId(league.shortcut)}_simulcast_${event.matchID}`,kickoff=dateLabel(event);
+  const artwork=league.shortcut+'-simulcast/1.png';
+  return {id,type:'tv',name:league.name,description:kickoff,posterShape:'landscape',
+    poster:`${origin}${prefix}/poster/${artwork}`,background:`${origin}${prefix}/background/${artwork}`,
     released:event.matchDateTimeUTC,releaseInfo:`${weekdayLabel(event)} · ${kickoff}`,behaviorHints:{defaultVideoId:id}};
 }
 function manifest(list,settings={}) {
@@ -452,13 +453,15 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
     }
     if(!(/^(\/manifest\.json|\/catalog\/|\/meta\/|\/stream\/|\/poster\/|\/background\/)/.test(pathname)))return json({error:'Nicht gefunden'},404);
     const details=pathname.match(/^\/(meta|stream)\/tv\/([^/]+)\.json$/);
-    if(details?.[2].startsWith(SIMULCAST_PREFIX)){
+    const simulcast=/^defootball_(\w+)_simulcast_(\d+)$/.exec(details?.[2]||'');
+    const simulcastLeague=SIMULCAST_LEAGUES.get(simulcast?.[1]);
+    if(simulcastLeague){
       const takeDaddy=requestBudget(40);
       const daddy=await getDaddySchedule(env,fetcher,{signal:request.signal,takeRequest:takeDaddy});
       if(!daddy.reachable)return json({error:'Spielplan nicht verfügbar'},503,0);
-      const event=bundesligaSimulcasts(daddy.events).find(entry=>SIMULCAST_PREFIX+entry.matchID===details[2]);
+      const event=leagueSimulcasts(daddy.events,simulcastLeague).find(entry=>String(entry.matchID)===simulcast[2]);
       if(!event)return json({error:'Konferenz nicht gefunden'},404,0);
-      if(details[1]==='meta')return json({meta:simulcastMeta(event,origin,prefix)});
+      if(details[1]==='meta')return json({meta:simulcastMeta(event,simulcastLeague,origin,prefix)});
       const mapped=nativeMappedEventStreams([event],env);
       const [verified,native]=await Promise.all([
         String(env.NATIVE_VERIFY_MANIFESTS||'').toLowerCase()==='true'
@@ -479,15 +482,16 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
     if(catalog){
       if(settings.c&&!settings.c.includes(catalog[1]))return json({metas:[]});
       const found=parseCatalog(catalog[1],list);if(!found)return json({metas:[]});
+      const conference=SIMULCAST_LEAGUES.get(found.league.shortcut.toLowerCase());
       const [games,table,simulcasts]=await Promise.all([
         fixtures(found.league,env,fetcher),standings(found.league,env,fetcher),
-        found.league.shortcut.toLowerCase()==='bl1'
-          ?getDaddySchedule(env,fetcher,{signal:request.signal}).then(schedule=>selectCalendarView(bundesligaSimulcasts(schedule.events),found.view))
+        conference
+          ?getDaddySchedule(env,fetcher,{signal:request.signal}).then(schedule=>selectCalendarView(leagueSimulcasts(schedule.events,conference),found.view))
           :[]
       ]);
       const selected=found.view==='upcoming'?selectUpcoming(games):selectCalendarView(games,found.view);
       const statistics=seasonStatistics(found.league,games,table);
-      const metas=[...simulcasts.map(event=>simulcastMeta(event,origin,prefix)),...selected.map(m=>meta(m,found.league,origin,prefix,statistics))];
+      const metas=[...simulcasts.map(event=>simulcastMeta(event,conference,origin,prefix)),...selected.map(m=>meta(m,found.league,origin,prefix,statistics))];
       if(simulcasts.length)metas.sort((a,b)=>Date.parse(a.released)-Date.parse(b.released));
       return json({metas},200,120);
     }
@@ -507,16 +511,17 @@ async function handleAddon(request,env,fetcher,{accessPrefix='',invite}={}) {
     }
     const image=pathname.match(/^\/(poster|background)\/([a-zA-Z0-9_-]{2,40})\/(\d+)\.(svg|png)$/);
     if(image){
-      const isSimulcast=image[2]+'/'+image[3]===SIMULCAST_ART;
+      const art=/^(\w+)-simulcast$/.exec(image[2]);
+      const conference=image[3]==='1'&&SIMULCAST_LEAGUES.get(art?.[1]);
       const league=list.find(x=>x.shortcut.toLowerCase()===image[2].toLowerCase());
-      if(!isSimulcast&&!league)return json({error:'Liga nicht gefunden'},404);
+      if(!conference&&!league)return json({error:'Liga nicht gefunden'},404);
       // Avoid a second, serial ESPN request in image paths. An 8s delay is
       // enough for NuvioTV's image loader to time out on the poster.
       const cache=typeof caches!=='undefined' && caches.default ? caches.default : null;
       const cacheKey=new Request(privateMode?origin+pathname+url.search:request.url);
       if(cache){const hit=await cache.match(cacheKey);if(hit)return hit;}
       let svg;
-      if(isSimulcast)svg=simulcastArtwork(image[1]==='background');
+      if(conference)svg=simulcastArtwork(conference,image[1]==='background');
       else{
         const games=await fixtures(league,env,fetcher,false);const game=games.find(x=>String(x.matchID)===image[3]);
         if(!game)return json({error:'Spiel nicht gefunden'},404);

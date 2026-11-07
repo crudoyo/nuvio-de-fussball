@@ -81,15 +81,17 @@ test('dated catch-up games appear in their actual week even without an official 
   assert.deepEqual(selectCalendarView(games,'unknown',friday),[]);
 });
 
-test('a Bundesliga simulcast is a separate calendar entry with its own channels and artwork',async t=>{
+test('Bundesliga and 3. Liga simulcasts have separate calendar entries, channels and artwork',async t=>{
   t.mock.timers.enable({apis:['Date'],now:friday});
   const channel=(channel_id,channel_name)=>({channel_id,channel_name});
   const event=(event,...channels)=>({time:'14:30',event,channels});
   const schedule={'Saturday 7th November 2026':{Football:[
     event('Germany - Bundesliga : Simulcast',channel('118','International'),channel('426','DAZN1 DE')),
     event('1. Bundesliga : Simulcast',channel('426','DAZN1 DE'),channel('427','Alternate')),
+    event('Germany - 3. Liga : Simulcast',channel('512','Magenta Sport 301')),
     event('Bundesliga 2 : Simulcast',channel('301','2. Bundesliga')),
     event('Germany - Bundesliga : Multiview',channel('302','Multiview')),
+    event('France - Ligue 3 : Simulcast',channel('305','Ligue1+ France')),
     event('England - Premier League : Simulcast',channel('303','Other competition'))
   ]}};
   const fetcher=async url=>{
@@ -99,9 +101,10 @@ test('a Bundesliga simulcast is a separate calendar entry with its own channels 
     return new Response(null,{status:404});
   };
   const env={SEASON:'2026',DADDY_WEB_PLAYERS:'true',NATIVE_CHANNEL_STREAMS_JSON:JSON.stringify({'426':{url:'https://media.example/conference.m3u8'}})};
-  const prefix='/u/'+encodeSettings({m:[],c:['defootball_bl1','defootball_bl1_saturday','defootball_bl1_sunday'],b:true});
+  const prefix='/u/'+encodeSettings({m:[],c:['defootball_bl1','defootball_bl1_saturday','defootball_bl1_sunday',
+    'defootball_bl3','defootball_bl3_saturday','defootball_bl3_sunday'],b:true});
   const get=path=>handle(new Request('https://addon.test'+path),env,fetcher);
-  const catalog=async suffix=>(await (await get(prefix+'/catalog/tv/defootball_bl1'+suffix+'.json')).json()).metas;
+  const catalog=async (suffix,league='bl1')=>(await (await get(prefix+'/catalog/tv/defootball_'+league+suffix+'.json')).json()).metas;
   const saturday=await catalog('_saturday');
   assert.deepEqual(saturday.map(m=>m.name),['Bundesliga-Konferenz','Heim 4 – Gast 4']);
   const [conference]=saturday;
@@ -117,6 +120,18 @@ test('a Bundesliga simulcast is a separate calendar entry with its own channels 
   assert.deepEqual(streams.slice(1).map(s=>s.externalUrl?.split('-').at(-1)),['426.php','118.php','427.php']);
   const native='/u/'+encodeSettings({m:[],b:false});
   assert.equal((await (await get(native+streamPath)).json()).streams.length,1);
+
+  const thirdSaturday=await catalog('_saturday','bl3');
+  assert.deepEqual(thirdSaturday.map(m=>m.name),['3. Liga-Konferenz','Heim 4 – Gast 4']);
+  const [thirdConference]=thirdSaturday;
+  assert.equal(thirdConference.id,conference.id.replace('_bl1_','_bl3_'));
+  assert.equal((await catalog('','bl3')).filter(m=>m.id===thirdConference.id).length,1);
+  assert(!(await catalog('_sunday','bl3')).some(m=>m.id===thirdConference.id));
+  assert.deepEqual((await (await get(prefix+'/meta/tv/'+thirdConference.id+'.json')).json()).meta,thirdConference);
+  const thirdPoster=await get(new URL(thirdConference.poster).pathname.replace('.png','.svg'));
+  assert.match(await thirdPoster.text(),/>3\. Liga</);
+  const thirdStreams=(await (await get(prefix+'/stream/tv/'+thirdConference.id+'.json')).json()).streams;
+  assert.deepEqual(thirdStreams.map(stream=>stream.name),['Browser · DaddyLive · Magenta Sport 301']);
 });
 
 test('two five-row league blocks lead the catalog; every row preserves playable game IDs',async t=>{
