@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolveStreams} from '../src/worker.js';
+import {DADDY_SOCCER_SCHEDULE} from '../src/daddylive.js';
 
 test('a cold source lookup leaves room for native Daddy playback within 50 Worker subrequests',async()=>{
   const previous=globalThis.caches;let calls=0,tokenCalls=0;
@@ -23,7 +24,7 @@ test('a cold source lookup leaves room for native Daddy playback within 50 Worke
     ]});
     if(url.startsWith(source+'/catalog/'))return Response.json({metas:[{id:'event',type:'tv',name:'Bayern vs Bremen',released:now.toISOString()}]});
     if(url===source+'/stream/tv/event.json')return Response.json({streams:[{url:'https://media.example.org/direct.m3u8'}]});
-    if(url==='https://thedaddy.li/')return new Response(html);
+    if(url===DADDY_SOCCER_SCHEDULE)return new Response(html);
     const wrapper=/^https:\/\/thedaddy.li\/stream\/stream-(11|426)\.php$/.exec(url);
     if(wrapper)return new Response(`<iframe id="thatframe" src="https://dembed.st/premiumtv/daddy.php?id=${wrapper[1]}"></iframe>`);
     const embed=/^https:\/\/dembed.st\/premiumtv\/daddy.php\?id=(11|426)$/.exec(url);

@@ -29,6 +29,8 @@ Fallbacks müssen dieselbe Sender-ID und denselben ausgewählten Playerpfad erha
 
 `src/daddy-domains.js` führt die explizite Liste gemeinsam für Spielplan, Player und Redirectprüfung. `www.thedaddy.pk` bleibt als bereits unterstützter Redirect-Host zugelassen. Das Spiegelverzeichnis gehört nicht zur Liste. Die aktuelle `.li`-HTML-Seite wird vor den öffentlichen JSON-Pfaden gelesen: Der alte JSON-Endpunkt lieferte bei der Prüfung zwar HTTP 200, aber Daten vom März 2025.
 
+Seit 07.11.2026 fragt SoccerDE zuerst die gefilterte HTML-Ansicht [All Soccer Events](https://thedaddy.li/index.php?cat=All+Soccer+Events+%E2%9A%BD) als öffentliche Quelle ab. Beim Wechsel zwischen bestätigten Hosts bleibt der Filter erhalten. Wenn die Ansicht kein brauchbares Programm liefert, kommen die Startseite und danach die bisherigen JSON-Pfade infrage.
+
 Netzfehler, Zeitüberschreitungen, HTTP 404/5xx und ungültige Spielpläne erlauben begrenzte Ausweichversuche. HTTP 401/403 und unzulässige Redirects beenden den jeweiligen Versuch ohne Domainwechsel. Erfolgreiche Origins werden im Worker-Prozess bevorzugt und für externe Playerlinks verwendet. Aliaswechsel und Redirects erhalten den kompletten Pfad und Query einschließlich Sender-ID; angebotene andere Playerpfade werden ausschließlich für denselben Sender übernommen.
 
 Pro Spielplanabruf gelten höchstens 20 Requests und 7,5 Sekunden, pro Senderauflösung 20 Requests und 6 Sekunden; ein Aliasversuch dauert höchstens 1,5 Sekunden. Der Aufruferabbruch wird auch bei Fetchern weitergegeben, die das Abbruchsignal ignorieren. Schlüsselgebundene API-Aufrufe werden weder gespiegelt noch bei Redirects weitergereicht. HTTPS-Zertifikatsprüfung bleibt aktiv.

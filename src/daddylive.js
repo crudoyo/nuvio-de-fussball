@@ -11,6 +11,7 @@
 import { parseDaddyHomepage } from './daddy-homepage.js';
 import {DADDY_PRIMARY,daddySiteUrl,sameDaddyRoute,daddyRequestContext,withDaddyFallback} from './daddy-domains.js';
 export const DADDY_HOMEPAGE = DADDY_PRIMARY+'/';
+export const DADDY_SOCCER_SCHEDULE = DADDY_PRIMARY+'/index.php?cat=All+Soccer+Events+%E2%9A%BD';
 export const DADDY_PUBLIC_SCHEDULE =
   'https://dlstreams.st/schedule/schedule-generated.json';
 export const DADDY_CURRENT_SCHEDULE =
@@ -133,8 +134,7 @@ async function downloadSchedule(url, fetcher, context, signal, protectedApi=fals
         const location=response.headers.get('location');
         if(!location)throw new Error('HTTP '+response.status+' (no Location)');
         const target=new URL(location,current);
-        if(!sameDaddyRoute(target.href,current)||target.pathname!=='/'||target.search)
-          throw new Error('Homepage redirect blocked');
+        if(!sameDaddyRoute(target.href,current))throw new Error('Homepage redirect blocked');
         if(target.href===current)throw new Error('Redirect loop');
         current=target.href;
         continue;
@@ -170,6 +170,7 @@ async function downloadSchedule(url, fetcher, context, signal, protectedApi=fals
     if(!Object.keys(schedule).some(k=>/\b20\d{2}\b/.test(k)))
       throw new Error('Invalid schema');
     const downloaded=parseDaddySchedule(payload),now=Date.now();
+    if(format==='html'&&!downloaded.length)throw new Error('Homepage schedule unavailable');
     const events=downloaded.filter(e=>Number.isFinite(Date.parse(e.startTime))&&Date.parse(e.startTime)>=now-7*86400000);
     if(downloaded.length&&!events.length){
       const last=Math.max(...downloaded.map(e=>Date.parse(e.startTime)).filter(Number.isFinite));
@@ -198,6 +199,7 @@ export async function getDaddySchedule(env={},fetcher=fetch,{signal}={}) {
     const attempts=[],context=daddyRequestContext({signal});
     const candidates=[
       ...(key?[{name:'DaddyLive API (Schlüssel)',url:apiUrl(key),protectedApi:true}]:[]),
+      {name:'DaddyLive All Soccer Events',url:DADDY_SOCCER_SCHEDULE,format:'html'},
       {name:'DaddyLive aktuelle Webseite',url:DADDY_HOMEPAGE,format:'html'},
       {name:'DaddyLive aktueller JSON-Pfad',url:DADDY_CURRENT_SCHEDULE},
       {name:'DaddyLive früherer JSON-Pfad',url:DADDY_PUBLIC_SCHEDULE}

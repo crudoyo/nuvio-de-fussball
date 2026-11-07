@@ -55,7 +55,7 @@ test('missing statistics are omitted; actual zeroes and point deductions remain 
 
 test('description places the standings record between points and goals',()=>{
   const lines=statisticsLines(game,createStatsContext(history,table,now));
-  assert.deepEqual(lines,['Saisonstand:',
+  assert.deepEqual(lines,[
     'SV Meppen: Platz 1 · 15 Punkte · Siege/Niederlagen 4:5 · Tore 16:17.',
     'Jahn Regensburg: Platz 2 · 13 Punkte · Siege/Niederlagen 3:5 · Tore 22:21.']);
   const partial=statisticsLines(game,createStatsContext(history.slice(0,2),[],now)).join('\n');
@@ -79,7 +79,7 @@ test('catalog previews and personal detail pages both replace the technical hint
     const response=await handle(new Request('https://addon.test'+path),{SEASON:'2026'},fetcher);
     assert.equal(response.status,200);
     const body=await response.json(),preview=body.meta||body.metas[0];
-    assert(preview.description.includes('SV Meppen: Platz 1 · 15 Punkte · Siege/Niederlagen 4:5 · Tore 16:17'));
+    assert(preview.description.startsWith('SV Meppen: Platz 1 · 15 Punkte · Siege/Niederlagen 4:5 · Tore 16:17'));
     assert(!/Form \(|Videostreams|Sport-Add-on|zuordnet/.test(preview.description));
     assert.equal(preview.id,'defootball_bl3_84873');
   }
@@ -103,7 +103,8 @@ test('completed matches show final and halftime scores, not a guessed result',as
   const response=await handle(new Request('https://addon.test/meta/tv/defootball_dfb_84873.json'),{SEASON:'2026'},
     async url=>new Response(JSON.stringify(String(url).includes('/getmatchdata/')?[completed]:[])));
   const {meta}=await response.json();
-  assert(meta.description.startsWith('Endstand: 2:1 (Halbzeit 0:1).'));
+  assert(meta.description.startsWith('SV Meppen: Siege/Niederlagen 1:0.'));
+  assert(meta.description.includes('Endstand: 2:1 (Halbzeit 0:1).'));
   assert(!meta.description.includes('Videostreams'));
 });
 

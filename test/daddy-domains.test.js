@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DADDY_ORIGINS,daddySiteUrl,daddyChannelPage,sameDaddyRoute,daddyRequestContext,withDaddyFallback} from '../src/daddy-domains.js';
-import {getDaddySchedule,daddyPlayerUrl,daddyPublicDiagnostic} from '../src/daddylive.js';
+import {DADDY_SOCCER_SCHEDULE,getDaddySchedule,daddyPlayerUrl,daddyPublicDiagnostic} from '../src/daddylive.js';
 import {resolveDaddyChannel} from '../src/daddy-native.js';
 import {resolveStreams} from '../src/worker.js';
 
@@ -30,33 +30,34 @@ test('the shared alias list is explicit and preserves player identity',()=>{
   assert(!sameDaddyRoute('https://thedaddy.li/cast/stream-31.php','https://thedaddy.pk/stream/stream-31.php'));
 });
 
-test('fresh .li HTML is used without requesting stale JSON or media',async()=>{
+test('the filtered soccer HTML is used without requesting the homepage, JSON or media',async()=>{
   const calls=[];
   const result=await getDaddySchedule({},async(url,options)=>{
     calls.push(url);assert.equal(options.redirect,'manual');
     assert(!Object.keys(options.headers).some(key=>/cookie|authorization/i.test(key)));
     return html();
   });
-  assert.deepEqual(calls,['https://thedaddy.li/']);
+  assert.deepEqual(calls,[DADDY_SOCCER_SCHEDULE]);
   assert(result.reachable);assert.equal(result.siteOrigin,'https://thedaddy.li');
   assert.equal(result.footballEvents,1);assert.equal(result.events[0].channels[0].id,'31');
 });
 
 test('schedule falls back to a working alias and prefers it on subsequent requests',async()=>{
   const calls=[];
+  const route=DADDY_SOCCER_SCHEDULE.slice('https://thedaddy.li'.length);
   const fetcher=async url=>{
     calls.push(url);
-    if(url==='https://thedaddy.li/')throw new TypeError('network unavailable');
-    if(url==='https://thedaddy.pk/')return new Response('',{status:503});
-    if(url==='https://dlhd.pk/')return html();
+    if(url==='https://thedaddy.li'+route)throw new TypeError('network unavailable');
+    if(url==='https://thedaddy.pk'+route)return redirect('https://dlhd.pk'+route);
+    if(url==='https://dlhd.pk'+route)return html();
     throw Error('Unexpected URL');
   };
   const result=await getDaddySchedule({},fetcher);
   assert(result.reachable);assert.equal(result.siteOrigin,'https://dlhd.pk');
-  assert.deepEqual(calls,['https://thedaddy.li/','https://thedaddy.pk/','https://dlhd.pk/']);
+  assert.deepEqual(calls,['https://thedaddy.li','https://thedaddy.pk','https://dlhd.pk'].map(origin=>origin+route));
   calls.length=0;
   assert((await getDaddySchedule({},fetcher)).reachable);
-  assert.deepEqual(calls,['https://dlhd.pk/']);
+  assert.deepEqual(calls,['https://dlhd.pk'+route]);
 });
 
 test('the full dlstreams -> dlive -> .pk -> .li chain preserves the selected route',async()=>{

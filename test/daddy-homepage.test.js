@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseDaddyHomepage} from '../src/daddy-homepage.js';
-import {getDaddySchedule,parseUkScheduleDate} from '../src/daddylive.js';
+import {DADDY_HOMEPAGE,DADDY_SOCCER_SCHEDULE,getDaddySchedule,parseUkScheduleDate} from '../src/daddylive.js';
 
 const freshDay=new Date();
 const day=freshDay.getUTCDate();
@@ -45,24 +45,20 @@ test('abbreviated month dates in actual DaddyLive headings parse as GMT',()=>{
   assert.equal(parseUkScheduleDate('Wednesday 04th Nov 2026 - Schedule Time UK GMT','19:45'),
     '2026-11-04T19:45:00.000Z');
 });
-test('fresh homepage is preferred without waiting for the obsolete JSON feeds',async()=>{
-  const older={'Thursday 20th March 2025 - Schedule Time UK GMT':{
-    Soccer:[{time:'23:00',event:'Paraguay vs Chile',channels:[{channel_id:'555'}]}]
-  }};
+test('a redirect that drops the soccer filter falls back to the homepage as a separate source',async()=>{
   const calls=[];
   const result=await getDaddySchedule({},async (url,options)=>{
     const u=String(url);calls.push(u);
     assert.equal(options.redirect,'manual');
-    if(u.includes('/schedule/schedule-generated.json'))return asJson(older);
-    if(u==='https://thedaddy.li/')return asText(site);
+    if(u===DADDY_SOCCER_SCHEDULE)return new Response(null,{status:301,headers:{location:DADDY_HOMEPAGE}});
+    if(u===DADDY_HOMEPAGE)return asText(site);
     return asText('Not found',404);
   });
   assert.equal(result.reachable,true);
   assert.equal(result.source,'DaddyLive aktuelle Webseite');
   assert.equal(result.footballEvents,2);
-  assert.deepEqual(result.attempts,[]);
-  assert(!calls.some(url=>url.includes('/schedule/')));
-  assert(calls.includes('https://thedaddy.li/'));
+  assert.deepEqual(result.attempts.map(x=>x.reason),['Homepage redirect blocked']);
+  assert.deepEqual(calls,[DADDY_SOCCER_SCHEDULE,DADDY_HOMEPAGE]);
 });
 test('a stale JSON feed without an accessible homepage does not claim availability',async()=>{
   const older={'Thursday 20th March 2025 - Schedule Time UK GMT':{
@@ -74,9 +70,7 @@ test('a stale JSON feed without an accessible homepage does not claim availabili
   });
   assert.equal(result.reachable,false);
   assert.equal(result.footballEvents,0);
-  assert.equal(result.attempts.length,3);
-  assert.equal(result.attempts[0].reason,'HTTP 403');
-  assert(result.attempts.slice(1).every(x=>x.reason==='Stale schedule (2025-03-20)'));
+  assert.deepEqual(result.attempts.map(x=>x.reason),['HTTP 403','HTTP 403','Stale schedule (2025-03-20)','Stale schedule (2025-03-20)']);
 });
 test('HTML without schedule markup is not treated as valid data',()=>{
   assert.equal(parseDaddyHomepage('<html><body>Login required</body></html>'),null);

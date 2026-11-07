@@ -194,9 +194,9 @@ function meta(m,league,origin,prefix='',statistics=null) {
   const round=hasCalendarCatalogs(league.shortcut)&&matchdayLabel(m);
   const day=hasCalendarCatalogs(league.shortcut)&&weekdayLabel(m);
   const description=[
+    ...statisticsLines(m,statistics),
     ...(score?[`Endstand: ${score.pointsTeam1}:${score.pointsTeam2}`+
       (halftime?` (Halbzeit ${halftime.pointsTeam1}:${halftime.pointsTeam2}).`:'.')]:[]),
-    ...statisticsLines(m,statistics),
     `${matchCompetition(m,league).name} · ${dateLabel(m)} · ${status(m)}.`
   ].join('\n');
   return {id,type:'tv',name:`${home} – ${away}`,poster,background,posterShape:'landscape',description,genres:['Fußball',league.name],releaseInfo:(day?day+' · ':'')+dateLabel(m),released:startTime(m)?.toISOString(),

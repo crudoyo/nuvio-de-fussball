@@ -123,7 +123,7 @@ test('public 301 redirect to the current JSON URL is followed safely',async()=>{
   const calls=[];let currentRequests=0;
   const result=await getDaddySchedule({},async(url,opt)=>{
     const u=String(url);calls.push({url:u,mode:opt.redirect});
-    if(new URL(u).pathname==='/')return asJson({},404);
+    if(['/','/index.php'].includes(new URL(u).pathname))return asJson({},404);
     if(u==='https://thedaddy.li/schedule/schedule-generated.json' && ++currentRequests===1)return asJson({},404);
     if(u==='https://dlstreams.st/schedule/schedule-generated.json')
       return new Response(null,{status:301,headers:{
@@ -133,7 +133,7 @@ test('public 301 redirect to the current JSON URL is followed safely',async()=>{
   assert.equal(result.reachable,true);
   assert.equal(result.footballEvents,2);
   assert(calls.every(c=>c.mode==='manual'));
-  assert.deepEqual(result.attempts.map(x=>x.reason),['HTTP 404','HTTP 404']);
+  assert.deepEqual(result.attempts.map(x=>x.reason),['HTTP 404','HTTP 404','HTTP 404']);
   assert.equal(currentRequests,2);
 });
 test('301 redirect to HTML homepage is reported, not treated as an empty schedule',async()=>{
@@ -143,10 +143,9 @@ test('301 redirect to HTML homepage is reported, not treated as an empty schedul
     return new Response(null,{status:301,headers:{location:'https://thedaddy.li/'}});
   });
   assert.equal(result.reachable,false);
-  assert.equal(result.attempts.length,3);
-  assert.equal(result.attempts[0].reason,'Redirect loop');
-  assert.equal(result.attempts[1].reason,'HTTP 404');
-  assert.equal(result.attempts[2].reason,'Public schedule redirected away from JSON');
+  assert.deepEqual(result.attempts.map(x=>x.reason),[
+    'Homepage redirect blocked','Redirect loop','HTTP 404','Public schedule redirected away from JSON'
+  ]);
 });
 test('protected API never follows redirects containing its key',async()=>{
   const calls=[];
@@ -159,7 +158,7 @@ test('protected API never follows redirects containing its key',async()=>{
   });
   assert.equal(result.reachable,false);
   assert.equal(result.attempts[0].reason,'Protected API redirect blocked');
-  assert.equal(calls.length,9);
+  assert.equal(calls.length,15);
   assert(calls.slice(1).every(url=>!url.includes(key)));
   assert(!calls.some(u=>u.includes('attacker.example')));
   assert(!JSON.stringify(result).includes(key));
@@ -167,8 +166,9 @@ test('protected API never follows redirects containing its key',async()=>{
 test('public JSON error documents are not misclassified as successful schedules',async()=>{
   const result=await getDaddySchedule({},async()=>asJson({error:'not found'}));
   assert.equal(result.reachable,false);
-  assert.equal(result.attempts[0].reason,'Homepage schedule unavailable');
-  assert(result.attempts.slice(1).every(x=>x.reason==='Invalid schema'));
+  assert.deepEqual(result.attempts.map(x=>x.reason),[
+    'Homepage schedule unavailable','Homepage schedule unavailable','Invalid schema','Invalid schema'
+  ]);
 });
 
 test('unmatched future game explains dates covered by DaddyLive schedule',()=>{

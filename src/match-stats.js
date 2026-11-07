@@ -61,7 +61,7 @@ export function createStatsContext(games,table=[],now=Date.now()){
 
 export function statisticsLines(match,context){
   if(!context)return [];
-  const lines=[match.team1,match.team2].flatMap(team=>{
+  return [match.team1,match.team2].flatMap(team=>{
     if(!team?.teamName)return [];
     const {standing,record}=context(team),parts=[];
     if(standing)parts.push(`Platz ${standing.rank}`,`${standing.points} Punkte`);
@@ -69,5 +69,4 @@ export function statisticsLines(match,context){
     if(standing)parts.push(`Tore ${standing.goals}:${standing.against}`);
     return parts.length?[team.teamName+': '+parts.join(' · ')+'.']:[];
   });
-  return lines.length?['Saisonstand:',...lines]:[];
 }
